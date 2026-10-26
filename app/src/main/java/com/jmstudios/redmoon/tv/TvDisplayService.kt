@@ -67,7 +67,12 @@ class TvDisplayService : Service() {
             "keep" -> { previewOriginal = null; previewLast = null; main.removeCallbacks(revertPreview); reconcile(true) }
             "revert" -> revertPreview.run()
             "restore" -> restore()
-            "pause" -> { clearOverride(); prefs.backlightEnabled = false; generation.incrementAndGet(); submit { backend.release(); status("Backlight changes paused; current level retained") }; reconcile(false) }
+            "pause" -> {
+                clearOverride(); prefs.backlightEnabled = false; generation.incrementAndGet()
+                if (previewOriginal != null) revertPreview.run()
+                else submit { backend.release(); status("Backlight changes paused; current level retained") }
+                reconcile(false)
+            }
             "phase" -> {
                 val phase = Phase.values().firstOrNull { it.name == intent?.getStringExtra("phase") }
                 if (phase != null && prefs.nativeQualified) {
@@ -84,7 +89,7 @@ class TvDisplayService : Service() {
                 reconcile(true)
             }
             "warmth" -> warmthOnly()
-            "warmth_off" -> { prefs.warmthEnabled = false; warmthOnly() }
+            "warmth_off" -> { prefs.warmthEnabled = false; warmthOnly(true) }
             else -> reconcile(command != "boundary")
         }
         main.post { stopIfIdle() }
@@ -138,7 +143,7 @@ class TvDisplayService : Service() {
             if (token != generation.get()) return@submit
             backend.claim()
             val current = backend.read()
-            if (original == null || originalContext != backend.context()) {
+            if (original == null || originalContext != backend.context() || current != (lastWritten ?: original)) {
                 lastWritten = null
                 original = current
                 originalContext = backend.context()
@@ -184,14 +189,14 @@ class TvDisplayService : Service() {
             alarm.setExactAndAllowWhileIdle(AlarmManager.RTC, next.toEpochMilli(), event)
         }
     }
-    private fun warmthOnly() {
+    private fun warmthOnly(immediate: Boolean = false) {
         val now = Instant.now()
         val policy = prefs.policy()
         scheduleNext(policy.at(now, ZoneId.systemDefault()).next.instant)
-        updateWarmth(policy, now)
+        updateWarmth(policy, now, immediate)
         sendBroadcast(Intent(STATUS).setPackage(packageName))
     }
-    private fun updateWarmth(policy: BrightnessPolicy, now: Instant) {
+    private fun updateWarmth(policy: BrightnessPolicy, now: Instant, immediate: Boolean = false) {
         val state = policy.at(now, ZoneId.systemDefault())
         val customActive = DailyWindow(prefs.warmthStart, prefs.warmthEnd).at(now, ZoneId.systemDefault()).first
         val strength = when {
@@ -212,7 +217,7 @@ class TvDisplayService : Service() {
         warmthAnimator?.cancel()
         val view = overlay!!
         warmthAnimator = ValueAnimator.ofObject(ProfileEvaluator(), view.profile, target).apply {
-            duration = prefs.warmthFade * 1000L
+            duration = if (immediate) 0L else prefs.warmthFade * 1000L
             addUpdateListener {
                 try { view.profile = it.animatedValue as Profile }
                 catch (e: RuntimeException) { cancel(); prefs.warmthStatus = "Warmth failed: ${e.message}" }
@@ -261,6 +266,8 @@ class TvDisplayService : Service() {
         }
     }
     private fun restore() {
+        if (!screenOn) { status("Restoration deferred: wake the TV first"); return }
+        if (previewOriginal != null) revertPreview.run()
         prefs.backlightEnabled = false
         clearOverride()
         generation.incrementAndGet()

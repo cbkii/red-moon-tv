@@ -55,3 +55,12 @@ class NoOpFadeTest {
         assertFalse(session.tick())
     }
 }
+
+class CollapsedDstTest {
+    @Test fun multipleSkippedBoundariesReconcileDirectlyToTheFinalPhase() {
+        val zone = java.time.ZoneId.of("Australia/Sydney")
+        val p = BrightnessPolicy(listOf(PhaseSetting(Phase.DAY, 80, 130, 0), PhaseSetting(Phase.DUSK, 40, 140, 0), PhaseSetting(Phase.DIM, 5, 1320, 0)))
+        val after = java.time.LocalDateTime.parse("2026-10-04T03:00").atZone(zone).toInstant()
+        assertEquals(Phase.DUSK, p.at(after, zone).current.phase)
+    }
+}

@@ -20,6 +20,7 @@ class TvActivity : Activity() {
     private lateinit var rows: LinearLayout
     private lateinit var status: TextView
     private var building = false
+    private var controlTag = 1
     private val refresh = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) { refreshStatus() }
     }
@@ -36,6 +37,9 @@ class TvActivity : Activity() {
         status.text = "${prefs.status}\n${prefs.warmthStatus}\nScheduled phase: ${state.current.phase.title} · next ${state.next.setting.phase.title} at ${time(state.next.setting.startMinute)} (${ZoneId.systemDefault()})"
     }
     private fun render() {
+        val oldFocus = currentFocus?.tag as? Int
+        val oldScroll = if (::rows.isInitialized) (rows.parent as? ScrollView)?.scrollY ?: 0 else 0
+        controlTag = 1
         building = true
         rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(48, 24, 48, 32); setBackgroundColor(Color.rgb(18, 22, 30)) }
         setContentView(ScrollView(this).apply { isFillViewport = true; addView(rows) })
@@ -79,7 +83,7 @@ class TvActivity : Activity() {
         text("Temporary phase · automatic schedule resumes at the next boundary", 17f)
         val quick = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; rows.addView(quick)
         Phase.values().forEach { phase ->
-            val b = Button(this).apply { text = phase.title; setOnClickListener { if (prefs.nativeQualified) { command("phase", phase); render() } else message("Verify native control first") } }
+            val b = Button(this).apply { tag = controlTag++; text = phase.title; setOnClickListener { if (prefs.nativeQualified) { command("phase", phase); render() } else message("Verify native control first") } }
             quick.addView(b, LinearLayout.LayoutParams(0, 64, 1f))
         }
         button("Resume scheduled phase") { command("resume"); render() }
@@ -115,16 +119,20 @@ class TvActivity : Activity() {
         }
         text("Use Up/Down to move, OK to edit, Left/Right to adjust, Back to cancel. Native backlight and playback filter coverage require testing on this A4. Pausing warmth never restores daytime brightness.", 16f)
         building = false
+        if (oldFocus != null) {
+            rows.findViewWithTag<View>(oldFocus)?.requestFocus()
+            (rows.parent as ScrollView).post { (rows.parent as ScrollView).scrollTo(0, oldScroll) }
+        }
     }
     private fun text(value: String, size: Float): TextView = TextView(this).apply {
         text = value; textSize = size; setTextColor(Color.WHITE); setPadding(8, 12, 8, 8); rows.addView(this)
     }
     private fun button(label: String, action: () -> Unit): Button = Button(this).apply {
-        text = label; isAllCaps = false; gravity = Gravity.START or Gravity.CENTER_VERTICAL; minHeight = 60
+        tag = controlTag++; text = label; isAllCaps = false; gravity = Gravity.START or Gravity.CENTER_VERTICAL; minHeight = 60
         setOnClickListener { action() }; rows.addView(this, LinearLayout.LayoutParams(-1, -2))
     }
     private fun toggle(label: String, checked: Boolean, change: (Boolean) -> Unit) {
-        rows.addView(CheckBox(this).apply { text = label; textSize = 18f; setTextColor(Color.WHITE); isChecked = checked
+        rows.addView(CheckBox(this).apply { tag = controlTag++; text = label; textSize = 18f; setTextColor(Color.WHITE); isChecked = checked
             setPadding(8, 10, 8, 10); setOnCheckedChangeListener { _, value -> if (!building) change(value) }
         })
     }
