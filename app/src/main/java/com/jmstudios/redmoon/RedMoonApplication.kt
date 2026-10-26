@@ -46,6 +46,10 @@ class RedMoonApplication: Application() {
             upgradeFrom(34)
         } in 34..36 -> {
             upgradeFrom(37)
+        } in 37..Int.MAX_VALUE -> {
+            // TV/testing channels have independent version codes. Never walk
+            // hundreds of thousands of versions on an upgrade or downgrade.
+            Config.fromVersionCode = BuildConfig.VERSION_CODE
         } else -> {
             Log.e("Didn't catch upgrades from version $version")
             upgradeFrom(version+1)
