@@ -58,10 +58,10 @@ jobs:
           set -euo pipefail
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
           cd source
-          ./gradlew --no-daemon --stacktrace -PVERSION_CODE=999999 -PVERSION_NAME=0.0.0-testing :app:testTestingUnitTest :app:lintTesting :app:assembleTesting
+          ./gradlew --no-daemon --stacktrace -PVERSION_CODE=999999 -PVERSION_NAME=0.0.0-testing :app:testSnapshotUnitTest :app:lintSnapshot :app:assembleSnapshot
           cd ..
           mkdir testing-input
-          cp source/app/build/outputs/apk/testing/app-testing-unsigned.apk testing-input/app-unsigned.apk
+          cp source/app/build/outputs/apk/snapshot/app-snapshot-unsigned.apk testing-input/app-unsigned.apk
           python3 orchestrator/scripts/ci/envelope.py --sha "$SOURCE_SHA" --channel testing --version-code 999999 --version-name 0.0.0-testing --output testing-input/BUILD_INFO.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

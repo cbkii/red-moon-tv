@@ -19,6 +19,7 @@ class TvDisplayService : Service() {
     private val worker = Executors.newSingleThreadScheduledExecutor()
     private val generation = AtomicInteger()
     private val pendingNative = AtomicInteger()
+    @Volatile private var destroyed = false
     private lateinit var prefs: TvPreferences
     private lateinit var backend: BacklightBackend
     private var overlay: Overlay? = null
@@ -95,7 +96,12 @@ class TvDisplayService : Service() {
         sendBroadcast(Intent(STATUS).setPackage(packageName))
     }
     private fun submit(work: () -> Unit) {
-        pendingNative.incrementAndGet()
+        if (destroyed) return
+        if (pendingNative.incrementAndGet() > 2) {
+            pendingNative.decrementAndGet()
+            status("Native operation already pending; wait for its result")
+            return
+        }
         worker.execute {
             try { work() } catch (error: Exception) {
                 generation.incrementAndGet()
@@ -109,7 +115,7 @@ class TvDisplayService : Service() {
         prefs.store.edit().remove("override-phase").remove("override-until").apply()
     }
     private fun stopIfIdle() {
-        if (pendingNative.get() == 0 && !prefs.backlightEnabled && !prefs.warmthEnabled && overridePhase == null && previewOriginal == null && (overlay == null || overlay!!.profile.isOff)) stopSelf()
+        if (!destroyed && pendingNative.get() == 0 && !prefs.backlightEnabled && !prefs.warmthEnabled && overridePhase == null && previewOriginal == null && (overlay == null || overlay!!.profile.isOff)) stopSelf()
     }
     private fun reconcile(force: Boolean) {
         val policy = try { prefs.policy() } catch (e: IllegalArgumentException) { status("Invalid schedule: ${e.message}"); return }
@@ -121,7 +127,8 @@ class TvDisplayService : Service() {
         sendBroadcast(Intent(STATUS).setPackage(packageName))
         if (!screenOn || previewOriginal != null) return
         if (!force && prefs.store.getBoolean("native-blocked", false)) return
-        if (!prefs.nativeQualified || (!prefs.backlightEnabled && overridePhase == null)) return
+        if (!prefs.backlightEnabled && overridePhase == null) return
+        if (!prefs.nativeQualified) { status("Native qualification required for this firmware/Settings version; no backlight writes"); return }
         val setting = overridePhase?.let { p -> policy.settings.first { it.phase == p } } ?: state.current
         if (!force && appliedPhase == setting.phase) return
         appliedPhase = setting.phase
@@ -130,10 +137,11 @@ class TvDisplayService : Service() {
             if (token != generation.get()) return@submit
             backend.claim()
             val current = backend.read()
-            if (original == null) {
+            if (original == null || originalContext != backend.context()) {
+                lastWritten = null
                 original = current
                 originalContext = backend.context()
-                prefs.store.edit().putInt("original", current).putString("original-context", originalContext).apply()
+                prefs.store.edit().putInt("original", current).putString("original-context", originalContext).remove("last-written").apply()
             }
             prefs.store.edit().putBoolean("native-blocked", false).apply()
             val duration = if (prefs.fadesQualified) setting.fadeSeconds * 1000L else 0L
@@ -247,7 +255,7 @@ class TvDisplayService : Service() {
                 check(backend.read() == target)
                 status("Native probe $saved → $target. Reverting in 15 seconds; inspect the actual screen and native slider.")
             } finally {
-                main.postDelayed(revertPreview, 15000)
+                if (!destroyed) main.postDelayed(revertPreview, 15000)
             }
         }
     }
@@ -271,6 +279,7 @@ class TvDisplayService : Service() {
         }
     }
     override fun onDestroy() {
+        destroyed = true
         generation.incrementAndGet()
         main.removeCallbacksAndMessages(null)
         warmthAnimator?.cancel()

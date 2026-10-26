@@ -45,7 +45,7 @@ Use JDK 11 with Gradle wrapper 7.2 and SDK platform/build-tools 32. SDK manager 
 
 ```sh
 python3 -m unittest discover -s scripts/ci -p 'test_*.py'
-./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleTesting
+./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleSnapshot
 ```
 
 The local task environment can compile the reflection-only Java bridge and run Python contract tests. Full Android compilation requires the Android SDK/dependencies or a functioning GitHub Actions runner. Do not report a successful APK build from syntax checks alone.

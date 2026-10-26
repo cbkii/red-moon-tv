@@ -51,7 +51,7 @@ android {
             versionNameSuffix '-debug'
             manifestPlaceholders = [appLabel: 'Red Moon TV DEBUG']
         }
-        create('testing') {
+        create('snapshot') {
             initWith release
             applicationIdSuffix '.testing'
             versionNameSuffix ''

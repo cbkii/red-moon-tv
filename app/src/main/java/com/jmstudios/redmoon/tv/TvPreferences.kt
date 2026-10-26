@@ -14,7 +14,13 @@ class TvPreferences(private val context: Context) {
         get() = store.getBoolean("probe-restored", false) && store.getString("probe-signature", "") == signature
     var nativeQualified: Boolean
         get() = store.getBoolean("native-qualified", false) && store.getString("qualified-signature", "") == signature
-        set(value) { store.edit().putBoolean("native-qualified", value).putString("qualified-signature", signature).apply() }
+        set(value) {
+            val changed = store.getString("qualified-signature", "") != signature
+            store.edit().apply {
+                putBoolean("native-qualified", value); putString("qualified-signature", signature)
+                if (!value || changed) putBoolean("fades-qualified", false)
+            }.apply()
+        }
     var fadesQualified: Boolean
         get() = nativeQualified && store.getBoolean("fades-qualified", false)
         set(value) { store.edit().putBoolean("fades-qualified", value).apply() }
