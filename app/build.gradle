@@ -32,8 +32,8 @@ android {
         applicationId "com.cbkii.redmoontv"
         minSdkVersion 26
         targetSdkVersion 32
-        versionCode (project.findProperty('VERSION_CODE') ?: '40').toInteger()
-        versionName project.findProperty('VERSION_NAME') ?: '4.0.1-tv.1'
+        versionCode = (project.findProperty('VERSION_CODE') ?: '40').toString().toInteger()
+        versionName = (project.findProperty('VERSION_NAME') ?: '4.0.1-tv.1').toString()
         manifestPlaceholders = [appLabel: 'Red Moon TV']
     }
     compileOptions {
@@ -51,7 +51,7 @@ android {
             versionNameSuffix '-debug'
             manifestPlaceholders = [appLabel: 'Red Moon TV DEBUG']
         }
-        testing {
+        create('testing') {
             initWith release
             applicationIdSuffix '.testing'
             versionNameSuffix ''

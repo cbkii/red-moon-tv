@@ -47,6 +47,7 @@ class Overlay(context: Context) : View(context), Filter,
     private val mWindowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mOrientationReceiver = OrientationChangeReceiver(context, this)
     private val mBrightnessManager = BrightnessManager(context)
+    private var shown = false
 
     override fun onCreate() {
         Log.i("onCreate()")
@@ -73,15 +74,19 @@ class Overlay(context: Context) : View(context), Filter,
     }
 
     private fun show() {
+        if (shown) return
         mWindowManager.addView(this, mLayoutParams)
+        shown = true
         mBrightnessManager.brightnessLowered = profile.lowerBrightness
         mOrientationReceiver.register()
         EventBus.register(this)
     }
 
     private fun hide() {
+        if (!shown) return
+        shown = false
         mBrightnessManager.brightnessLowered = false
-        mWindowManager.removeView(this)
+        if (isAttachedToWindow) mWindowManager.removeView(this)
         mOrientationReceiver.unregister()
         EventBus.unregister(this)
     }
