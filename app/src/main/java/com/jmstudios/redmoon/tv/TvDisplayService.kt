@@ -254,7 +254,8 @@ class TvDisplayService : Service() {
         submit {
             backend.claim()
             val saved = backend.read()
-            val target = if (saved > 1) saved - 1 else saved + 1
+            // Observed A4 PWM plateaus span several adjacent UI levels.
+            val target = if (saved > 5) saved - 5 else saved + 5
             previewOriginal = saved; previewLast = target; previewContext = backend.context()
             try {
                 backend.write(target)

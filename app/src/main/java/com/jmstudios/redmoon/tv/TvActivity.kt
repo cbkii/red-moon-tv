@@ -50,7 +50,7 @@ class TvActivity : Activity() {
         button("Read native backlight (root)") { command("read") }.requestFocus()
         button("Test a nearby native level for 15 seconds, then restore") {
             AlertDialog.Builder(this).setTitle("Native backlight probe")
-                .setMessage("Tests a one-step change using the TV API and attempts restoration after 15 seconds. Check the actual screen and native Backlight slider. Root permission is needed. If interrupted, restore in TV Settings. The test does not qualify fades or input switching.")
+                .setMessage("Tests a nearby five-point change using the TV API and attempts restoration after 15 seconds. Check the actual screen and native Backlight slider. Root permission is needed. If interrupted, restore in TV Settings. The test does not qualify fades or input switching.")
                 .setNegativeButton("Cancel", null).setPositiveButton("Test") { _, _ -> command("probe") }.show()
         }
         button("Revert current preview") { command("revert") }
