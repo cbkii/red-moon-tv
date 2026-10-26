@@ -1,3 +1,15 @@
+# Red Moon TV — A4 backlight-first fork
+
+Native backlight control for the Toshiba/Hisense HiSmartTV A4, with a D-pad interface, strict Day/Dusk/Dim schedules and independently scheduled warmth. Both schedules start disabled; native control and repeated-write fades require physical qualification.
+
+- [A4 operation, diagnostics and acceptance](docs/A4-VALIDATION.md)
+- [TESTING, signing and release workflows](docs/RELEASES.md)
+- [Investigated implementation plan](docs/A4-BACKLIGHT-PLAN.md)
+
+This fork uses a separate application ID and preserves the upstream colour-filter engine. Vendor control has not been physically qualified by CI. The original upstream README follows.
+
+---
+
 ## Not Actively Maintained
 
 Red Moon is no longer maintained, but Pull Requests are still accepted. I'm also willing to deputize PR authors as co-maintainers. [**Read More**](https://github.com/LibreShift/red-moon/issues/281)

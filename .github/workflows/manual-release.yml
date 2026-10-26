@@ -1,0 +1,117 @@
+name: Manual Release
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'APK versionName and tag suffix, for example 4.0.1-tv.1'
+        type: string
+        required: true
+        default: 4.0.1-tv.1
+      version_code:
+        description: 'Monotonically increasing stable versionCode; TESTING has its own package'
+        type: string
+        required: true
+        default: '40'
+      release_state:
+        description: GitHub release state
+        type: choice
+        options: [draft, prerelease, stable]
+        default: draft
+      a4_qualified:
+        description: 'The exact candidate passed physical A4 acceptance (required for stable)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: manual-release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Resolve current default branch and version contract
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          RELEASE_STATE: ${{ inputs.release_state }}
+          A4_QUALIFIED: ${{ inputs.a4_qualified }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH"
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEFAULT_BRANCH" --jq .sha)"
+          test "$sha" = "$GITHUB_SHA"
+          if [ "$RELEASE_STATE" = stable ] && [ "$A4_QUALIFIED" != true ]; then
+            echo 'Stable requires physical A4 qualification of this candidate.' >&2
+            exit 1
+          fi
+          mkdir release-input
+          python3 scripts/ci/envelope.py --sha "$sha" --channel release --version-name "$VERSION_NAME" --version-code "$VERSION_CODE" --output release-input/BUILD_INFO.json
+          echo "source_sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '11'
+      - name: Install SDK inputs
+        run: 'env JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-32" "build-tools;32.0.0"'
+      - name: Build and test exact release without signing secrets
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --stacktrace -PVERSION_NAME="$VERSION_NAME" -PVERSION_CODE="$VERSION_CODE" :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
+          cp app/build/outputs/apk/release/app-release-unsigned.apk release-input/app-unsigned.apk
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: red-moon-tv-release-input
+          path: release-input/
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: red-moon-tv-release-input
+          path: incoming
+      - name: Install signing tools
+        run: 'env JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;32.0.0"'
+      - name: Sign and verify exact release
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+        run: python3 scripts/ci/qualify.py --incoming incoming --output qualified --tools "$ANDROID_SDK_ROOT/build-tools/32.0.0" --expected-sha "$SOURCE_SHA"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: red-moon-tv-qualified-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: qualified/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish verified bytes through a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_STATE: ${{ inputs.release_state }}
+        run: python3 scripts/ci/publish.py --directory qualified --expected-sha "$SOURCE_SHA" --tag "v$VERSION_NAME" --state "$RELEASE_STATE"

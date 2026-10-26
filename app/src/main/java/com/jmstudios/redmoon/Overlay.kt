@@ -96,23 +96,10 @@ class Overlay(context: Context) : View(context), Filter,
 
     val mLayoutParams = WindowManager.LayoutParams().apply {
         buttonBrightness = Config.buttonBacklightLevel
-        // TODO: why is cutout always null?
-        // if(atLeastAPI(Build.VERSION_CODES.P)) {
-        //     val cutout = WindowInsets.Builder().build().displayCutout
-        //     val top = cutout?.boundingRectTop?.height() ?: 0
-        //     val bottom = cutout?.boundingRectBottom?.height() ?: 0
-        //     val left = cutout?.boundingRectLeft?.width() ?: 0
-        //     val right = cutout?.boundingRectRight?.width() ?: 0
-        //     height = Resources.getSystem().displayMetrics.heightPixels + top + bottom
-        //     width = Resources.getSystem().displayMetrics.widthPixels + left + right
-        //     x = -left
-        //     y = -top
-        // } else {
-            height = Resources.getSystem().displayMetrics.heightPixels + 4000
-            width = Resources.getSystem().displayMetrics.widthPixels + 4000
-            x = -1000
-            y = -1000
-        // }
+        height = WindowManager.LayoutParams.MATCH_PARENT
+        width = WindowManager.LayoutParams.MATCH_PARENT
+        x = 0
+        y = 0
         format = PixelFormat.TRANSLUCENT
         type = if (isAccessibilityServiceOn(context) && atLeastAPI(Build.VERSION_CODES.M)) {
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY

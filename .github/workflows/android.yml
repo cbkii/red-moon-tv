@@ -22,7 +22,7 @@ jobs:
           distribution: temurin
           java-version: '11'
       - name: Install SDK inputs
-        run: '"$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-32" "build-tools;32.0.0"'
+        run: 'env JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-32" "build-tools;32.0.0"'
       - name: Check release scripts
         run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
       - name: Test, lint and build TV APKs
