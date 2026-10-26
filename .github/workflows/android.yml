@@ -26,13 +26,16 @@ jobs:
       - name: Check release scripts
         run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
       - name: Test, lint and build TV APKs
-        run: ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleSnapshot
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleSnapshot 2>&1 | tee gradle-build.log
       - name: Preserve installable diagnostic APK and test reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: red-moon-tv-ci-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            gradle-build.log
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/snapshot/*.apk
             app/build/reports/

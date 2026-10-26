@@ -47,3 +47,11 @@ class DailyWindowTest {
         assertFalse(window.at(later, zone).first)
     }
 }
+
+class NoOpFadeTest {
+    @Test fun unchangedTargetFinishesWithoutAnIdleTicker() {
+        val p = BrightnessPolicy.defaults()
+        val session = TransitionSession(BrightnessFade(p, p.settings[2], 5, 888000), 5, { 0 }, { false }, { fail("No write expected") })
+        assertFalse(session.tick())
+    }
+}

@@ -76,9 +76,10 @@ class TvActivity : Activity() {
             }
         }
         text("Phase limits apply immediately; fades continue within them. For example, 90 → Dusk 40 steps to 80 before fading. Native percentages are slider positions, not measured light output.", 16f)
+        text("Temporary phase · automatic schedule resumes at the next boundary", 17f)
         val quick = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; rows.addView(quick)
         Phase.values().forEach { phase ->
-            val b = Button(this).apply { text = phase.title; setOnClickListener { if (prefs.nativeQualified) command("phase", phase) else message("Verify native control first") } }
+            val b = Button(this).apply { text = phase.title; setOnClickListener { if (prefs.nativeQualified) { command("phase", phase); render() } else message("Verify native control first") } }
             quick.addView(b, LinearLayout.LayoutParams(0, 64, 1f))
         }
         button("Resume scheduled phase") { command("resume"); render() }
@@ -157,7 +158,7 @@ class TvActivity : Activity() {
     }
     private fun command(name: String = "reconcile", phase: Phase? = null) {
         if (name in listOf("pause", "restore")) prefs.backlightEnabled = false
-        if (name == "resume" && prefs.nativeQualified) prefs.backlightEnabled = true
+        if (name in listOf("resume", "phase") && prefs.nativeQualified) prefs.backlightEnabled = true
         if (name == "warmth_off") prefs.warmthEnabled = false
         TvDisplayService.command(this, name, phase)
     }

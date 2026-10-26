@@ -71,6 +71,7 @@ class TvDisplayService : Service() {
             "phase" -> {
                 val phase = Phase.values().firstOrNull { it.name == intent?.getStringExtra("phase") }
                 if (phase != null && prefs.nativeQualified) {
+                    prefs.backlightEnabled = true
                     overridePhase = phase
                     overrideUntil = prefs.policy().at(Instant.now(), ZoneId.systemDefault()).next.instant
                     prefs.store.edit().putString("override-phase", phase.name).putLong("override-until", overrideUntil!!.toEpochMilli()).apply()
