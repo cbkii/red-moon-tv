@@ -3,6 +3,7 @@ package com.jmstudios.redmoon.tv
 
 import android.animation.ValueAnimator
 import android.app.*
+import android.app.Notification
 import android.content.*
 import android.os.*
 import android.provider.Settings
