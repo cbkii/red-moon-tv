@@ -6,7 +6,7 @@ Native backlight control for the Toshiba/Hisense HiSmartTV A4, with a D-pad inte
 - [TESTING, signing and release workflows](docs/RELEASES.md)
 - [Investigated implementation plan](docs/A4-BACKLIGHT-PLAN.md)
 
-The A4 backend uses the installed vendor bindings in a private APK process, without root shell helpers, UI navigation or redistributed vendor binaries. An atomic recovery journal and live controller lease protect writes. Interrupted sessions require explicit Read/Restore/Keep; source/HDR identity still needs physical qualification.
+The A4 backend uses the installed vendor bindings in a private APK process. Diagnostics also offers an experimental persistent root fallback with fixed private pipe commands and bounded native operations. Neither path uses UI navigation, staged executables or redistributed vendor binaries. An atomic recovery journal and live controller lease protect writes. Interrupted sessions require explicit Read/Restore/Keep; source/HDR identity still needs physical qualification. See [root/performance qualification and the read-only collector](docs/A4-ROOT-AND-PERFORMANCE.md).
 
 This fork uses a separate application ID and preserves the upstream colour-filter engine. Vendor control has not been physically qualified by CI. The original upstream README follows.
 

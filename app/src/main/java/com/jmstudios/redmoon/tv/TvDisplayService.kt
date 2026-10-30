@@ -58,7 +58,8 @@ class TvDisplayService : Service() {
             } else {
                 clearWarmth()
                 status("Standby: native writes suspended")
-                submit { controller.close() } // Drop the worker/lease in standby; retain recovery evidence.
+                // Lifecycle cleanup must not be dropped by the interactive-request queue limit.
+                worker.execute { controller.close() } // Retain recovery evidence.
             }
         }
     }

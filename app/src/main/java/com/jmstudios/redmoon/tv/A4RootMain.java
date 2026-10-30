@@ -67,10 +67,12 @@ public final class A4RootMain {
                 RootProtocol.writeReply(output, reply); output.flush(); deadline.cancel(false);
             }
         } finally {
-            if (lease != null) lease.close();
-            watchdog.shutdownNow();
-            // Do not leave vendor-created non-daemon threads alive after pipe closure.
-            Process.killProcess(Process.myPid());
+            try { if (lease != null) lease.close(); }
+            finally {
+                watchdog.shutdownNow();
+                // Also exit if socket cleanup fails; vendor threads must not outlive the client.
+                Process.killProcess(Process.myPid());
+            }
         }
     }
     private static String describe(Throwable error) {
