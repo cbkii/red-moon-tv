@@ -78,7 +78,9 @@ class A4RootBacklightBackend(context: Context) : BacklightBackend {
             identity = worker
             val edit = app.getSharedPreferences("tv-display-v1", Context.MODE_PRIVATE).edit()
             edit.putString("native-diagnostics", "root-pipe-v1; worker=$worker; ${response.diagnostics}")
-            if (response.error.isNotEmpty()) edit.putString("first-initialisation-error", response.error)
+            if (operation == RootProtocol.HELLO) edit.remove("first-initialisation-error")
+            if (response.initialisationError.isNotEmpty()) edit.putString("first-initialisation-error", response.initialisationError)
+            if (response.error.isNotEmpty()) edit.putString("root-last-error", response.error)
             edit.apply()
             check(response.error.isEmpty()) { response.error }
             failed = false

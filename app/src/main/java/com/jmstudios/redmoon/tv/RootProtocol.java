@@ -31,13 +31,14 @@ public final class RootProtocol {
     }
     public static final class Reply {
         public int sequence, uid, pid, level = -1;
-        public String token = "", worker = "", context = "", diagnostics = "", error = "";
+        public String token = "", worker = "", context = "", diagnostics = "", error = "", initialisationError = "";
     }
     public static void writeReply(DataOutput out, Reply r) throws IOException {
         out.writeInt(MAGIC); out.writeInt(r.sequence); out.writeUTF(r.token);
         out.writeInt(r.uid); out.writeInt(r.pid); out.writeUTF(r.worker);
         out.writeInt(r.level); out.writeUTF(bound(r.context, 2048));
         out.writeUTF(bound(r.diagnostics, 4096)); out.writeUTF(bound(r.error, 2048));
+        out.writeUTF(bound(r.initialisationError, 2048));
     }
     public static Reply readReply(DataInput in, Request request) throws IOException {
         if (in.readInt() != MAGIC) throw new IOException("Root reply protocol mismatch");
@@ -45,6 +46,7 @@ public final class RootProtocol {
         r.sequence = in.readInt(); r.token = text(in, 36); r.uid = in.readInt(); r.pid = in.readInt();
         r.worker = text(in, 36); r.level = in.readInt(); r.context = text(in, 2048);
         r.diagnostics = text(in, 4096); r.error = text(in, 2048);
+        r.initialisationError = text(in, 2048);
         if (r.sequence != request.sequence || !r.token.equals(request.token) || r.uid != 0 ||
             r.pid <= 0 || BootIdentity.validate(r.worker) == null || r.level < -1 || r.level > 100)
             throw new IOException("Unexpected root worker/reply identity");

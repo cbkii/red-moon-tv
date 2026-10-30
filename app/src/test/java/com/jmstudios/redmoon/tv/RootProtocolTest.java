@@ -49,11 +49,16 @@ public class RootProtocolTest {
     @Test public void error_and_diagnostic_output_has_a_fixed_memory_bound() throws Exception {
         RootProtocol.Reply r = good();
         char[] huge = new char[100000]; java.util.Arrays.fill(huge, 'x');
-        r.diagnostics = new String(huge); r.error = new String(huge);
+        r.diagnostics = new String(huge); r.error = new String(huge); r.initialisationError = "original JNI failure";
         byte[] bytes = reply(r);
         assertTrue(bytes.length < 9000);
         RootProtocol.Reply result = parse(bytes);
         assertEquals(4096, result.diagnostics.length()); assertEquals(2048, result.error.length());
+        assertEquals("original JNI failure", result.initialisationError);
+    }
+    @Test public void lease_or_runtime_errors_do_not_masquerade_as_initialisation_failure() throws Exception {
+        RootProtocol.Reply r = good(); r.error = "Ownership conflict";
+        assertEquals("", parse(reply(r)).initialisationError);
     }
     @Test public void boot_identity_never_accepts_wall_clock_or_process_approximations() {
         assertEquals(TOKEN, BootIdentity.validate(TOKEN.toUpperCase(java.util.Locale.ROOT)));

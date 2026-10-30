@@ -19,7 +19,7 @@ class TvPreferences(private val context: Context) {
         check(!backlightEnabled)
         check(store.edit().putBoolean("root-backend", root).putBoolean("native-qualified", false)
             .putBoolean("fades-qualified", false).putBoolean("probe-restored", false)
-            .remove("native-diagnostics").remove("first-initialisation-error").commit()) { "Cannot persist backend selection" }
+            .remove("native-diagnostics").remove("first-initialisation-error").remove("root-last-error").commit()) { "Cannot persist backend selection" }
     }
     fun prepareIdentity(ready: () -> Unit = {}) {
         val app = context.applicationContext

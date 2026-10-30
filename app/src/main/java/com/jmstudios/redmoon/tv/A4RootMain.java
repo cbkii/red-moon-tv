@@ -62,6 +62,7 @@ public final class A4RootMain {
                     reply.diagnostics += bridge == null ? "root-pipe-v1; JNI not initialised" : bridge.diagnostics();
                 } catch (Throwable failure) {
                     reply.error = describe(failure);
+                    reply.initialisationError = firstFailure;
                     reply.diagnostics = "root-pipe-v1; first failure=" + firstFailure + "; stage=" + A4NativeBridge.initialisationStage;
                 }
                 RootProtocol.writeReply(output, reply); output.flush(); deadline.cancel(false);

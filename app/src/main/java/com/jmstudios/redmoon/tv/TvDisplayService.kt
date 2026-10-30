@@ -102,6 +102,7 @@ class TvDisplayService : Service() {
                 if (command == "read_restart" && (prefs.backlightEnabled || preview)) status("Pause scheduling/preview before restarting the native worker")
                 else submit {
                     if (command == "read_restart") controller.close()
+                    status("Reading native backlight via ${if (prefs.rootBackend) "root (Magisk may prompt)" else "APK worker"}; this read does not write the panel")
                     status("Confirmed native backlight: ${controller.read()} / 100.\n${prefs.store.getString("native-diagnostics", "")}")
                 }
             }
