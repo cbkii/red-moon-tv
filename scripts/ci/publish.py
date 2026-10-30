@@ -130,7 +130,7 @@ def publish(directory, repo, expected_sha, state, tag):
             notes += f'- [{snapshot}]({asset["browser_download_url"]}) · [metadata]({metadata["browser_download_url"]})\n'
     else:
         notes += f'\nSource: {expected_sha}\n\nAPK SHA-256: {info["apk_sha256"]}\n'
-    final = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH', dict(name=title, body=notes, draft=state == 'draft', prerelease=state == 'prerelease', make_latest=False))
+    final = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH', dict(name=title, body=notes, draft=state == 'draft', prerelease=state == 'prerelease', make_latest='false'))
     if final['draft'] != (state == 'draft') or final['tag_name'] != tag: raise ValueError('Release state verification failed')
     print(final['html_url'])
 
