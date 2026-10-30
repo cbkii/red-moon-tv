@@ -3,6 +3,10 @@ package com.jmstudios.redmoon.tv
 
 enum class TvSetupStep { PROBING, RECOVERY, CHECKING, CONNECT, READING, FAILED, READ_ONLY, PROBE, CONFIRM, READY }
 
+/** A killed read cannot leave the next launch showing an operation that no longer exists. */
+fun nativeReadState(currentSource: Boolean, stored: String, serviceActive: Boolean): String =
+    if (!currentSource || (stored == "reading" && !serviceActive)) "not_checked" else stored
+
 /** UI setup is a view of actual read/probe state; opening a page never qualifies hardware. */
 fun tvSetupStep(identityReady: Boolean, recovery: Boolean, readState: String, level: Int?,
                 writeContext: Boolean, probeRestored: Boolean, qualified: Boolean, probeActive: Boolean = false): TvSetupStep = when {

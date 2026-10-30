@@ -5,6 +5,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TvSetupStateTest {
+    @Test fun interruptedReadCanReconnectWhileCompletedIdleReadRemainsExportable() {
+        assertEquals("not_checked", nativeReadState(true, "reading", false))
+        assertEquals("reading", nativeReadState(true, "reading", true))
+        assertEquals("ready", nativeReadState(true, "ready", false))
+        assertEquals("not_checked", nativeReadState(false, "ready", false))
+    }
     @Test fun liveProbeJournalIsExpectedButBecomesRecoveryAfterServiceLoss() {
         assertEquals(TvSetupStep.PROBING, tvSetupStep(true, true, "ready", 61, true, false, false, true))
         assertEquals(TvSetupStep.RECOVERY, tvSetupStep(true, true, "ready", 61, true, false, false, false))

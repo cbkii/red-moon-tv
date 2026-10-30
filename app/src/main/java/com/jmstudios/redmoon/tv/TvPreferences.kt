@@ -16,7 +16,8 @@ class TvPreferences(private val context: Context) {
     val rootBackend: Boolean get() = store.getBoolean("root-backend", false)
     val currentRead: Boolean get() = store.getString("native-read-source", "") == BuildConfig.SOURCE_SHA &&
         store.getBoolean("native-read-root", !rootBackend) == rootBackend
-    val readState: String get() = if (currentRead) store.getString("native-read-state", "not_checked")!! else "not_checked"
+    val readState: String get() = nativeReadState(currentRead, store.getString("native-read-state", "not_checked")!!,
+        TvDisplayService.active)
     val nativeLevel: Int? get() = NativeSnapshot.value?.takeIf { it.root == rootBackend }?.level
         ?: store.getInt("native-read-level", -1).takeIf { currentRead && it in 0..100 }
     val writeContextReady: Boolean get() = NativeSnapshot.value?.takeIf { it.root == rootBackend }?.writeContext
