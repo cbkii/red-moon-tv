@@ -55,7 +55,8 @@ class Overlay(context: Context) : View(context), Filter,
 
     override var profile: Profile = activeProfile.off
         set(value) {
-            Log.i("profile set to: $value")
+            if (field == value) return
+            Log.d { "profile set to: $value" }
             field = value
             filtering = !value.isOff
         }

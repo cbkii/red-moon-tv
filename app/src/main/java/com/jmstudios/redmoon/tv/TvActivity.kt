@@ -116,6 +116,10 @@ class TvActivity : Activity() {
         }
         button("Resume scheduled phase") { command("resume"); render() }
         button("Pause backlight changes (keep current level)") { command("pause"); render() }
+        button("Pause and transfer control to another installed build") {
+            AlertDialog.Builder(this).setMessage("Pauses this build, releases its live lease and clears its saved original after pending work settles. Then open the other build and Resume. The current panel level is retained.")
+                .setNegativeButton("Cancel", null).setPositiveButton("Release control") { _, _ -> command("keep") }.show()
+        }
         button("Pause and restore saved native backlight") { command("restore"); render() }
         text("Warmth", 23f)
         toggle("Enable warmth schedule", prefs.warmthEnabled) { prefs.warmthEnabled = it; command("warmth") }

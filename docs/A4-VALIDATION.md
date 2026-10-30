@@ -22,7 +22,7 @@ No temporary TV files or `/data/*` staging directories are required. Red Moon ca
 
 After the first successful visible test/restoration, verify operating bands at low/mid/high values conservatively. Test native manual changes during a fade: Red Moon must yield when its next read detects them. It cannot atomically exclude a vendor Settings write between read/set. Check picture modes, input changes, SDR/HDR, dynamic backlight and light-sensor modes without silently disabling native features.
 
-Test screen-off during a preview/fade, wake, boot while asleep, ordinary process death/restart, explicit force-stop/relaunch, package replacement, blocked/unavailable vendor service and a second installed app variant. No concurrent writers, stale lease or unbounded retry is acceptable. Pause the old variant and wait for its native operation to settle before transferring control. Force-stop requires manual relaunch.
+Test screen-off during a preview/fade, wake, boot while asleep, ordinary process death/restart, explicit force-stop/relaunch, package replacement, blocked/unavailable vendor service and a second installed app variant. No concurrent writers, stale lease or unbounded retry is acceptable. Use Pause and transfer control in the old variant and wait for its native operation to settle before resuming the new variant; this clears the old saved restoration record. Force-stop requires manual relaunch.
 
 Record whether input transitions can occur without a boot/picture context change. If they can, full automatic restoration/context compatibility remains unqualified until a verified vendor source identity/callback is implemented. Do not fabricate source keys.
 

@@ -31,7 +31,7 @@ public final class A4NativeBridge {
         File library = new File("/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so");
         if (!library.canRead()) throw new IllegalStateException("Installed vendor JNI is unavailable");
         long began = SystemClock.elapsedRealtime();
-        ApplicationInfo installed = context.getPackageManager().getApplicationInfo("com.android.tv.settings", 1024);
+        ApplicationInfo installed = context.getPackageManager().getApplicationInfo("com.android.tv.settings", android.content.pm.PackageManager.GET_SHARED_LIBRARY_FILES);
         List<String> paths = new ArrayList<>();
         if (installed.sharedLibraryFiles != null) for (String path : installed.sharedLibraryFiles) paths.add(path);
         paths.add(installed.sourceDir);
@@ -72,7 +72,9 @@ public final class A4NativeBridge {
     public String context() throws Exception {
         int picture = (Integer) getter.invoke(config, "g_video__picture_mode");
         if (picture < 0) throw new IllegalStateException("Picture context unavailable");
-        return Build.FINGERPRINT + ":boot=" + Settings.Global.getInt(app.getContentResolver(), "boot_count", -1) + ":picture=" + picture;
+        int boot = Settings.Global.getInt(app.getContentResolver(), "boot_count", -1);
+        if (boot < 0) throw new IllegalStateException("Boot context unavailable; writes cannot be qualified");
+        return Build.FINGERPRINT + ":boot=" + boot + ":picture=" + picture;
     }
     public String diagnostics() {
         return PROTOCOL + "; uid=" + Process.myUid() + "; abi=" + android.text.TextUtils.join(",", Build.SUPPORTED_ABIS)

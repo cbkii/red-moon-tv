@@ -25,6 +25,20 @@ class TransitionSessionTest {
         assertEquals(40, session.lastApplied)
         assertFalse(session.tick()); assertEquals(1, calls)
     }
+    @Test fun cancellation_during_setter_preserves_late_confirmation_but_stops_future_steps() {
+        var cancelled = false
+        var time = 0L
+        val writes = mutableListOf<Int>()
+        val transition = TransitionSession(BrightnessFade(p, p.settings[2], 40, 1000), 40, { time }, { cancelled }) {
+            writes.add(it); cancelled = true
+        }
+        transition.tick()
+        assertEquals(20, transition.lastApplied)
+        time = 1000
+        assertFalse(transition.tick())
+        assertEquals(listOf(20), writes)
+    }
+
     @Test fun replacementGenerationStopsOldTransition() {
         var generation = 1; val writes = mutableListOf<Int>()
         val old = TransitionSession(BrightnessFade(p, p.settings[2], 40, 1000), 40, { 0 }, { generation != 1 }, { writes.add(it) })

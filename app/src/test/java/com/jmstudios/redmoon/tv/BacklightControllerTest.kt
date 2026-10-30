@@ -72,5 +72,11 @@ class BacklightControllerTest {
         val fade = BrightnessFade(policy, policy.settings[1], 80, 888000)
         assertTrue(fade.nextDelay(0) > 10000)
         assertEquals(500L, BrightnessFade(policy, policy.settings[1], 80, 1000).nextDelay(0))
+    }    @Test fun unchanged_phase_does_not_create_a_recovery_record() {
+        val native = Fake(); val store = Memory(); val controller = BacklightController(native, store, "session")
+        controller.begin("schedule"); controller.write(66)
+        assertNull(store.record); assertTrue(native.writes.isEmpty())
+        controller.release()
     }
+
 }

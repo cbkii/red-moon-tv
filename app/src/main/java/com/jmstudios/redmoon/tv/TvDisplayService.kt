@@ -220,7 +220,9 @@ class TvDisplayService : Service() {
             clearWarmth()
             return
         }
-        val target = Profile(prefs.store.getInt("warmth-colour", 40), strength, 0, false)
+        val colour = prefs.store.getInt("warmth-colour", 40)
+        require(strength in 0..100 && colour in 0..100 && prefs.warmthFade in 0..888) { "Invalid warmth settings" }
+        val target = Profile(colour, strength, 0, false)
         if (overlay == null && strength == 0) { prefs.warmthStatus = "Warmth off"; return }
         if (overlay == null) overlay = Overlay(this)
         if (overlay?.profile == target) return

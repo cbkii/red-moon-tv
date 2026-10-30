@@ -15,7 +15,7 @@ class TvPreferences(private val context: Context) {
         get() = identity ?: synchronized(TvPreferences::class.java) {
             identity ?: run {
                 val binding = try {
-                    val info = context.packageManager.getApplicationInfo("com.android.tv.settings", 1024)
+                    val info = context.packageManager.getApplicationInfo("com.android.tv.settings", android.content.pm.PackageManager.GET_SHARED_LIBRARY_FILES)
                     (listOf(info.sourceDir) + (info.sharedLibraryFiles?.toList() ?: emptyList())).joinToString(":") { digest(File(it)) }
                 } catch (_: Exception) { "binding-unavailable" }
                 (android.os.Build.FINGERPRINT + ":" + BuildConfig.BACKEND_PROTOCOL + ":" + BuildConfig.SOURCE_SHA +
