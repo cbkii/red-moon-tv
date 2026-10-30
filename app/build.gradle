@@ -1,5 +1,3 @@
-import org.ajoberstar.grgit.Grgit
-
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
@@ -27,15 +25,28 @@ if(rootProject.file("keystore.properties").exists()) {
    }
 }
 
+def sourceSha = (project.findProperty('SOURCE_SHA') ?: System.getenv('SOURCE_SHA') ?: '').toString()
+if (!sourceSha) {
+    def output = new ByteArrayOutputStream()
+    exec { commandLine 'git', 'rev-parse', 'HEAD'; standardOutput = output }
+    sourceSha = output.toString().trim()
+}
+if (!(sourceSha ==~ /[0-9a-f]{40}/)) throw new GradleException('SOURCE_SHA must be a full immutable commit')
+def buildIdentity = (System.getenv('GITHUB_RUN_ID') ?: 'local') + '-' + (System.getenv('GITHUB_RUN_ATTEMPT') ?: '1')
+
 android {
     compileSdkVersion 32
 
     defaultConfig {
-        applicationId "com.jmstudios.redmoon"
-        minSdkVersion 14
+        applicationId "com.cbkii.redmoontv"
+        minSdkVersion 26
         targetSdkVersion 32
-        versionCode 39
-        versionName "4.0.0"
+        versionCode = (project.findProperty('VERSION_CODE') ?: '40').toString().toInteger()
+        versionName = (project.findProperty('VERSION_NAME') ?: '4.0.1-tv.1').toString()
+        manifestPlaceholders = [appLabel: 'Red Moon TV']
+        buildConfigField 'String', 'SOURCE_SHA', '"' + sourceSha + '"'
+        buildConfigField 'String', 'BUILD_ID', '"' + buildIdentity + '"'
+        buildConfigField 'String', 'BACKEND_PROTOCOL', '"apk-jni-v2"'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -49,13 +60,16 @@ android {
 
         debug {
             applicationIdSuffix '.debug'
-            def repo = Grgit.open(currentDir: project.rootDir)
-            def commitId = "${repo.log().get(0).getAbbreviatedId()}"
-            if (repo.status().isClean()) {
-                versionNameSuffix "-$commitId"
-            } else {
-                versionNameSuffix "-$commitId (dirty)"
-            }
+            versionNameSuffix '-debug'
+            manifestPlaceholders = [appLabel: 'Red Moon TV DEBUG']
+        }
+        create('snapshot') {
+            initWith release
+            applicationIdSuffix '.testing'
+            versionNameSuffix ''
+            signingConfig null
+            manifestPlaceholders = [appLabel: 'Red Moon TV TESTING']
+            matchingFallbacks = ['release']
         }
     }
     sourceSets {
@@ -67,6 +81,8 @@ android {
 }
 
 dependencies {
+    implementation platform("org.jetbrains.kotlin:kotlin-bom:$kotlin_version")
+    testImplementation 'junit:junit:4.13.2'
     // Android/platform deps
     implementation 'androidx.core:core:1.7.0'
     implementation 'androidx.appcompat:appcompat:1.4.1'
