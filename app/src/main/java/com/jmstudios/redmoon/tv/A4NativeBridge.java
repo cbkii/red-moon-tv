@@ -40,19 +40,19 @@ public final class A4NativeBridge {
         long began = SystemClock.elapsedRealtime();
         Class<?> api = resolveApi(dexPath);
         bindingSource = installedSource;
-        initialisationStage = "getInstance";
+        stage("getInstance");
         config = api.getMethod("getInstance").invoke(null);
-        initialisationStage = "resolve getter/setter signatures";
+        stage("resolve getter/setter signatures");
         getter = api.getMethod("getConfigValue", String.class);
         setter = api.getMethod("setConfigValue", String.class, int.class);
-        initialisationStage = "native getMinMaxConfigValue";
+        stage("native getMinMaxConfigValue");
         int packed = (Integer) api.getMethod("getMinMaxConfigValue", String.class).invoke(config, KEY);
-        initialisationStage = "unpack native range";
+        stage("unpack native range");
         minimum = (Integer) api.getMethod("getMinValue", int.class).invoke(null, packed);
         maximum = (Integer) api.getMethod("getMaxValue", int.class).invoke(null, packed);
         if (minimum != 0 || maximum != 100) throw new IllegalStateException("Unexpected vendor range " + minimum + ".." + maximum);
         loadedAt = SystemClock.elapsedRealtime() - began;
-        initialisationStage = "ready";
+        stage("ready");
     }
     public static String installedPaths(Context context) throws Exception {
         ApplicationInfo installed = context.getPackageManager().getApplicationInfo("com.android.tv.settings", android.content.pm.PackageManager.GET_SHARED_LIBRARY_FILES);
@@ -68,9 +68,13 @@ public final class A4NativeBridge {
         int count = Settings.Global.getInt(context.getContentResolver(), "boot_count", -1);
         return count < 0 ? null : "count=" + count;
     }
+    private static void stage(String value) {
+        initialisationStage = value;
+        android.util.Log.i("RedMoonTV", "Native initialisation stage: " + value);
+    }
     private static synchronized Class<?> resolveApi(String dexPath) throws Exception {
         if (installedApi != null) return installedApi;
-        initialisationStage = "resolve installed bindings";
+        stage("resolve installed bindings");
         Class<?> api;
         String source;
         try {

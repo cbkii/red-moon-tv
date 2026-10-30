@@ -30,7 +30,10 @@ public final class A4RootMain {
                 if (!token.equals(request.token) || request.sequence <= previousSequence) break;
                 previousSequence = request.sequence;
                 // A hung JNI call cannot leave an unbounded privileged process after client death.
-                ScheduledFuture<?> deadline = watchdog.schedule(() -> Process.killProcess(Process.myPid()), 5, TimeUnit.SECONDS);
+                ScheduledFuture<?> deadline = watchdog.schedule(() -> {
+                    android.util.Log.e("RedMoonTV", "Root native deadline; operation=" + request.operation + "; stage=" + A4NativeBridge.initialisationStage);
+                    Process.killProcess(Process.myPid());
+                }, 5, TimeUnit.SECONDS);
                 RootProtocol.Reply reply = new RootProtocol.Reply();
                 reply.sequence = request.sequence; reply.token = token; reply.worker = worker;
                 reply.uid = Process.myUid(); reply.pid = Process.myPid();
