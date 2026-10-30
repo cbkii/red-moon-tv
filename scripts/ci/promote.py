@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from publish import api, gh
 from envelope import validate
+from qualify import run, check_badging
 
 MARKER = '<!-- red-moon-tv-release-managed -->'
 CHECKS = ('native_read', 'panel_write', 'restoration', 'scheduling', 'lifecycle', 'fades',
@@ -32,7 +33,7 @@ def acceptance(record, info):
     return record
 
 
-def promote(repo, release_id, record):
+def promote(repo, release_id, record, tools):
     release = api(f'repos/{repo}/releases/{release_id}')
     if not release['draft'] or MARKER not in (release.get('body') or ''):
         raise ValueError('Select a managed, unpublished stable-package draft')
@@ -62,6 +63,11 @@ def promote(repo, release_id, record):
         apk = next(root.glob('*.apk'))
         if hashlib.sha256(apk.read_bytes()).hexdigest() != info['apk_sha256']:
             raise ValueError('Accepted APK was modified')
+        signer = run([tools / 'apksigner', 'verify', '--verbose', '--print-certs', apk])
+        certificate = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})', signer)
+        if not certificate or certificate.group(1).lower() != info['signer_sha256']: raise ValueError('Candidate signature differs from acceptance')
+        check_badging(run([tools / 'aapt', 'dump', 'badging', apk]), info)
+        run([tools / 'zipalign', '-c', '4', apk])
         sums = next(root.glob('SHA256SUMS-*'))
         expected = {p.name for p in root.iterdir() if p != sums}
         covered = set()
@@ -97,5 +103,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--release-id', required=True, type=int)
     parser.add_argument('--acceptance', required=True, type=Path)
+    parser.add_argument('--tools', required=True, type=Path)
     args = parser.parse_args()
-    promote(os.environ['GITHUB_REPOSITORY'], args.release_id, json.loads(args.acceptance.read_text()))
+    promote(os.environ['GITHUB_REPOSITORY'], args.release_id, json.loads(args.acceptance.read_text()), args.tools)

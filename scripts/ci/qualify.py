@@ -29,6 +29,8 @@ def check_badging(text, info):
 def qualify(incoming, destination, tools, expected_sha, run_id):
     if sorted(x.name for x in incoming.iterdir()) != ['BUILD_INFO.json', 'app-unsigned.apk']:
         raise ValueError('Unexpected build hand-off files')
+    for item in incoming.iterdir():
+        if item.is_symlink() or not item.is_file(): raise ValueError('Non-regular hand-off file')
     info = validate(json.loads((incoming / 'BUILD_INFO.json').read_text()))
     if info['source_sha'] != expected_sha:
         raise ValueError('Build metadata source does not match resolver source')
@@ -36,9 +38,9 @@ def qualify(incoming, destination, tools, expected_sha, run_id):
     manifest = run([tools / 'aapt', 'dump', 'xmltree', incoming / 'app-unsigned.apk', 'AndroidManifest.xml'])
     if 'android.intent.category.LEANBACK_LAUNCHER' not in manifest:
         raise ValueError('Missing TV launcher entry')
-    for item in incoming.iterdir():
-        if item.is_symlink() or not item.is_file(): raise ValueError('Non-regular hand-off file')
     with zipfile.ZipFile(incoming / 'app-unsigned.apk') as archive:
+        dex = b''.join(archive.read(name) for name in archive.namelist() if re.fullmatch(r'classes[0-9]*\.dex', name))
+        if expected_sha.encode('ascii') not in dex: raise ValueError('APK does not embed the requested source identity')
         for member in archive.namelist():
             if member.startswith('/') or '..' in Path(member).parts: raise ValueError('Unsafe APK member')
             if member.startswith('lib/') and not member.startswith('lib/armeabi-v7a/'):
@@ -56,7 +58,7 @@ def qualify(incoming, destination, tools, expected_sha, run_id):
         aligned = Path(temp) / 'aligned.apk'
         run([tools / 'zipalign', '-f', '4', incoming / 'app-unsigned.apk', aligned])
         run([tools / 'apksigner', 'sign', '--ks', key, '--ks-pass', 'env:KEYSTORE_PASSWORD',
-             '--key-pass', 'env:KEY_PASSWORD', '--ks-key-alias', os.environ['KEY_ALIAS'], '--out', apk, aligned])
+             '--key-pass', 'env:KEY_PASSWORD', '--ks-key-alias', os.environ['KEY_ALIAS'], '--v4-signing-enabled', 'false', '--out', apk, aligned])
     signer = run([tools / 'apksigner', 'verify', '--verbose', '--print-certs', apk])
     if 'certificate SHA-256 digest:' not in signer:
         raise ValueError('Missing verified signing certificate')
