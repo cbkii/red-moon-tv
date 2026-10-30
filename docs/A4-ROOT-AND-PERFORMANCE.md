@@ -28,6 +28,8 @@ Root's installed APK/classpath may naturally reside in Android-managed installat
 
 ## Collector
 
+For connection/package selection, an interactive read/optional-probe session and the ZIP inventory, use the [main A4 validation guide](A4-VALIDATION.md). Add `--guided` for remote-operated steps with timestamped observations. With no `--package`, the collector selects a variant only if exactly one is installed; multiple variants require explicit selection.
+
 Use an existing Python 3 + ADB installation on Termux or the workstation. It never installs, starts, force-stops, changes settings, clears logcat or writes TV files. The exact transport is mandatory and must report xiaoyushan before collection. Every command is bounded and failures remain in manifest.json; transport timeouts are not silently retried.
 
 ```sh
