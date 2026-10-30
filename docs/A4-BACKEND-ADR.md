@@ -25,3 +25,5 @@ Impact map:
 | Artifact identity | Gradle BuildConfig / envelope / qualify | Diagnostics, signed metadata, publisher/promote checksum and acceptance tests |
 
 Known incomplete gates: installed vendor access, source/HDR completeness, repeated-write persistence, physical lease/lifecycle behaviour, remote UI, overlay video-plane coverage and playback cost. Their exact evidence belongs in A4-VALIDATION.md and the candidate acceptance record. No source test can mark these passed.
+
+Runtime revision after rmd/early review: one pinned vendor defining loader and first initialisation result per worker; binding nonce and fresh server identity on every connection; no client-side numeric-PID termination. Forced recalculation cannot clear a persisted failure/manual hold. Qualification hashes are prepared asynchronously, delayed native futures are cancelled/removed, and warmth schedules only changed integers. The private IPC still uses the apk-jni-v2 read/write contract with added correlation fields; immutable source/build identity invalidates earlier implementation acknowledgements. See A4-REVIEW-RESOLUTION.md for exact classifications and physical limits.

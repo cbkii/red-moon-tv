@@ -39,3 +39,7 @@ Use the same playback source/session with and without Red Moon, including during
 After code/default-branch validation, prepare the signed `com.cbkii.redmoontv` draft candidate. Test those exact bytes separately: the package/UID differs from TESTING. Complete [A4-ACCEPTANCE.json](A4-ACCEPTANCE.json) with dated evidence for every gate. Promote consumes that record and rechecks remote hashes, signer, package/source/tag and current master, then publishes unchanged assets. It never builds or re-signs. An acknowledgement checkbox cannot replace this acceptance.
 
 Do not call the result fully compatible until all declared native, context/lifecycle, fade, warmth, playback and stable artifact gates pass. Current physical results: **not run in the development workspace**.
+
+## Latest reported device result and retest
+
+The signed 9fa / 41041255395-1 APK was installed and produced `rmd.txt`: native initialisation failed with a duplicate TV-APK classloader/JNI ownership error; recovery was not pending and no physical native-control/fade qualification was acknowledged. This is a failed native read, superseding the earlier absence of runtime evidence. The updated source pins one loader/first initialisation result and exposes the original failure stage. Test the updated signed APK with Read first; if it reports a retained failure, copy Diagnostics before using the explicit read-only Restart worker operation. See A4-REVIEW-RESOLUTION.md. No claim of physical compatibility follows from the code fix.

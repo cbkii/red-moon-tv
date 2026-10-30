@@ -30,6 +30,7 @@ class TvActivity : Activity() {
         super.onCreate(savedInstanceState)
         prefs = TvPreferences(this)
         render()
+        prefs.prepareIdentity { if (!isFinishing && !isDestroyed) render() }
     }
     override fun onStart() { super.onStart(); registerReceiver(refresh, IntentFilter(TvDisplayService.STATUS)) }
     override fun onStop() { unregisterReceiver(refresh); super.onStop() }
@@ -37,7 +38,7 @@ class TvActivity : Activity() {
     private fun refreshStatus(progress: String? = null) {
         val state = try { prefs.policy().at(Instant.now(), ZoneId.systemDefault()) }
             catch (error: IllegalArgumentException) { status.text = "Invalid saved schedule: ${error.message}"; return }
-        status.text = "${progress ?: prefs.status}\n${prefs.warmthStatus}\nScheduled phase: ${state.current.phase.title} · next ${state.next.setting.phase.title} at ${time(state.next.setting.startMinute)} (${ZoneId.systemDefault()})"
+        status.text = "${if (!prefs.identityReady) "Checking installed vendor identity…\n" else ""}${progress ?: prefs.status}\n${prefs.warmthStatus}\nScheduled phase: ${state.current.phase.title} · next ${state.next.setting.phase.title} at ${time(state.next.setting.startMinute)} (${ZoneId.systemDefault()})"
     }
     private fun render() {
         val oldFocus = currentFocus?.tag as? Int
@@ -63,6 +64,7 @@ class TvActivity : Activity() {
                 .setNegativeButton("Cancel", null).setPositiveButton("Keep") { _, _ -> command("keep"); render() }.show()
         }
         button("Read native backlight (APK context)") { command("read") }.requestFocus()
+        button("Restart native worker and read (no panel write)") { command("read_restart") }
         button("Test a nearby native level for 15 seconds, then restore") {
             AlertDialog.Builder(this).setTitle("Native backlight probe")
                 .setMessage("Tests a nearby five-point change using the TV API and attempts restoration after 15 seconds. Check the actual screen and native Backlight slider. Uses the installed vendor API from the APK. Root is not requested. If interrupted, restore in TV Settings. The test does not qualify fades or input switching.")
@@ -146,8 +148,13 @@ class TvActivity : Activity() {
         button("Warmth fade: ${prefs.warmthFade} seconds") { number("Warmth fade", prefs.warmthFade, 0, 888) { prefs.warmthFade = it; command("warmth"); render() } }
         button("Allow display over other apps") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
         button("Warmth off now (backlight unchanged)") { command("warmth_off"); render() }
-        toggle("Allow explicit tvQuickActions / ADB control intents", prefs.store.getBoolean("external-control", false)) {
-            prefs.store.edit().putBoolean("external-control", it).apply()
+        toggle("Allow external controls — any installed app can send commands", prefs.store.getBoolean("external-control", false)) { enabled ->
+            if (!enabled) prefs.store.edit().putBoolean("external-control", false).apply()
+            else AlertDialog.Builder(this).setTitle("Allow external display controls?")
+                .setMessage("This optional interface is open to every installed app, including tvQuickActions and ADB. It allows Day/Dusk/Dim, Pause, Resume, Warmth Off and Read. It cannot run shell/root commands, probes, qualification or restoration. Leave it off unless you trust the apps installed on this TV.")
+                .setNegativeButton("Keep off") { _, _ -> prefs.store.edit().putBoolean("external-control", false).apply(); render() }
+                .setPositiveButton("Allow") { _, _ -> prefs.store.edit().putBoolean("external-control", true).apply(); render() }
+                .setOnCancelListener { render() }.show()
         }
         text("Use Up/Down to move, OK to edit, Left/Right to adjust, Back to cancel. Native backlight and playback filter coverage require testing on this A4. Pausing warmth never restores daytime brightness.", 16f)
         building = false

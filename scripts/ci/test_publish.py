@@ -83,3 +83,52 @@ class PublisherTests(unittest.TestCase):
             with patch('publish.gh') as gh:
                 with self.assertRaises(ValueError): publisher.publish(root, 'cbkii/red-moon-tv', 'a'*40, 'draft', '')
                 gh.assert_not_called()
+
+    def test_placeholder_managed_draft_is_repaired_without_upload_or_resign(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self.bundle(root)
+            assets = [dict(id=i, name=p.name, digest='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest(), created_at='2026-10-30T00:00:00Z', browser_download_url='https://example.invalid/'+p.name) for i,p in enumerate(root.iterdir())]
+            release = dict(id=1, tag_name='untagged-placeholder', draft=True, body=MARKER, assets=assets, html_url='https://github.com/cbkii/red-moon-tv/releases')
+            def api(path, method='GET', data=None):
+                if method == 'PATCH':
+                    # Model the observed API behaviour: omitted tag identity becomes a placeholder.
+                    return dict(release, **dict(data, tag_name=data.get('tag_name', 'untagged-placeholder')))
+                self.assertEqual(method, 'GET')
+                return release
+            with patch('publish.history', return_value=[]), patch('publish.gh', return_value=json.dumps([[release]])) as gh, patch('publish.api', side_effect=api) as remote, contextlib.redirect_stdout(io.StringIO()):
+                publisher.publish(root, 'cbkii/red-moon-tv', 'a'*40, 'draft', '')
+                self.assertEqual(gh.call_count, 1)
+                writes = [c for c in remote.call_args_list if len(c.args)>1 and c.args[1]=='PATCH']
+                self.assertEqual(writes[0].args[2]['tag_name'], '000-testing-only')
+                self.assertEqual(writes[0].args[2]['target_commitish'], 'a'*40)
+
+    def test_placeholder_identity_is_repaired_before_new_asset_upload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self.bundle(root)
+            release = dict(id=1, tag_name='untagged-placeholder', draft=True, body=MARKER, assets=[], html_url='https://github.com/cbkii/red-moon-tv/releases')
+            def api(path, method='GET', data=None):
+                if method == 'PATCH': release.update(data)
+                return release
+            def gh(*args, **kwargs):
+                if args[0] == 'api': return json.dumps([[release]])
+                self.assertEqual(args[:3], ('release', 'upload', '000-testing-only'))
+                self.assertEqual(release['tag_name'], '000-testing-only')
+                file = Path(args[3])
+                release['assets'].append(dict(id=len(release['assets'])+1, name=file.name,
+                    digest='sha256:'+hashlib.sha256(file.read_bytes()).hexdigest(),
+                    created_at='2026-10-30T00:00:00Z', browser_download_url='https://example.invalid/'+file.name))
+                return ''
+            with patch('publish.history', return_value=[]), patch('publish.gh', side_effect=gh), patch('publish.api', side_effect=api), contextlib.redirect_stdout(io.StringIO()):
+                publisher.publish(root, 'cbkii/red-moon-tv', 'a'*40, 'draft', '')
+                self.assertEqual(len(release['assets']), 4)
+                self.assertTrue(release['draft'])
+
+    def test_partial_upload_does_not_displace_a_complete_retained_snapshot(self):
+        assets = []
+        for run in (1, 2, 3):
+            key = 'aaaaaaaaaaaa-'+str(run)+'-1'
+            names = [f'BUILD_INFO-{key}.json', f'red-moon-tv-TESTING-{key}.apk', f'SIGNER-{key}.txt', f'SHA256SUMS-{key}']
+            if run == 3: names = names[:1]  # Interrupted after metadata upload.
+            assets.extend(dict(name=name, created_at=f'2026-10-30T00:00:0{run}Z') for name in names)
+        retained = publisher.complete_testing_groups(assets)[:2]
+        self.assertEqual([x['name'] for x in retained], ['BUILD_INFO-aaaaaaaaaaaa-2-1.json','BUILD_INFO-aaaaaaaaaaaa-1-1.json'])

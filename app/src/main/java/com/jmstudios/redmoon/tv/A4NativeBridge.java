@@ -17,6 +17,9 @@ import java.util.List;
 public final class A4NativeBridge {
     public static final String PROTOCOL = "apk-jni-v2";
     private static final String KEY = "g_disp__disp_back_light";
+    private static Class<?> installedApi;
+    private static String installedSource;
+    public static volatile String initialisationStage = "not started";
     private final Context app;
     private final Object config;
     private final Method getter, setter;
@@ -31,6 +34,25 @@ public final class A4NativeBridge {
         File library = new File("/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so");
         if (!library.canRead()) throw new IllegalStateException("Installed vendor JNI is unavailable");
         long began = SystemClock.elapsedRealtime();
+        Class<?> api = resolveApi(context);
+        bindingSource = installedSource;
+        initialisationStage = "getInstance";
+        config = api.getMethod("getInstance").invoke(null);
+        initialisationStage = "resolve getter/setter signatures";
+        getter = api.getMethod("getConfigValue", String.class);
+        setter = api.getMethod("setConfigValue", String.class, int.class);
+        initialisationStage = "native getMinMaxConfigValue";
+        int packed = (Integer) api.getMethod("getMinMaxConfigValue", String.class).invoke(config, KEY);
+        initialisationStage = "unpack native range";
+        minimum = (Integer) api.getMethod("getMinValue", int.class).invoke(null, packed);
+        maximum = (Integer) api.getMethod("getMaxValue", int.class).invoke(null, packed);
+        if (minimum != 0 || maximum != 100) throw new IllegalStateException("Unexpected vendor range " + minimum + ".." + maximum);
+        loadedAt = SystemClock.elapsedRealtime() - began;
+        initialisationStage = "ready";
+    }
+    private static synchronized Class<?> resolveApi(Context context) throws Exception {
+        if (installedApi != null) return installedApi;
+        initialisationStage = "resolve installed bindings";
         ApplicationInfo installed = context.getPackageManager().getApplicationInfo("com.android.tv.settings", android.content.pm.PackageManager.GET_SHARED_LIBRARY_FILES);
         List<String> paths = new ArrayList<>();
         if (installed.sharedLibraryFiles != null) for (String path : installed.sharedLibraryFiles) paths.add(path);
@@ -48,15 +70,9 @@ public final class A4NativeBridge {
             api = Class.forName("com.mediatek.twoworlds.tv.MtkTvConfig", false, loader);
             source = dexPath;
         }
-        bindingSource = source;
-        config = api.getMethod("getInstance").invoke(null);
-        getter = api.getMethod("getConfigValue", String.class);
-        setter = api.getMethod("setConfigValue", String.class, int.class);
-        int packed = (Integer) api.getMethod("getMinMaxConfigValue", String.class).invoke(config, KEY);
-        minimum = (Integer) api.getMethod("getMinValue", int.class).invoke(null, packed);
-        maximum = (Integer) api.getMethod("getMaxValue", int.class).invoke(null, packed);
-        if (minimum != 0 || maximum != 100) throw new IllegalStateException("Unexpected vendor range " + minimum + ".." + maximum);
-        loadedAt = SystemClock.elapsedRealtime() - began;
+        installedSource = source;
+        installedApi = api;
+        return api;
     }
     public int read() throws Exception {
         int value = (Integer) getter.invoke(config, KEY);
