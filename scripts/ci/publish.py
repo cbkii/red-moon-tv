@@ -41,6 +41,17 @@ def history(releases, repo):
             yield previous, prior
 
 
+def complete_testing_groups(assets):
+    names = {a['name'] for a in assets}
+    groups = []
+    for asset in assets:
+        if not re.fullmatch(r'BUILD_INFO-[0-9a-f]{12}-[0-9]+(?:-[0-9]+)?\.json', asset['name']): continue
+        key = asset['name'][11:-5]
+        required = {f'red-moon-tv-TESTING-{key}.apk', f'BUILD_INFO-{key}.json', f'SIGNER-{key}.txt', f'SHA256SUMS-{key}'}
+        if required <= names: groups.append(asset)
+    return sorted(groups, key=lambda a: a['created_at'], reverse=True)
+
+
 def publish(directory, repo, expected_sha, state, tag):
     if state != 'draft': raise ValueError('Only draft preparation is allowed; use promote.py after exact-artifact acceptance')
     files = sorted(directory.iterdir())
@@ -83,6 +94,10 @@ def publish(directory, repo, expected_sha, state, tag):
         if info['channel'] == 'release' and prior['channel'] == 'release' and not previous['draft'] and info['version_code'] <= prior['version_code']:
             raise ValueError('Stable versionCode must increase over every published stable APK')
     matches = [r for r in releases if r['tag_name'] == tag]
+    if testing and not matches:
+        # GitHub may give an unpublished draft an untagged placeholder if a PATCH
+        # omitted its intended identity. Recover only our uniquely managed draft.
+        matches = [r for r in releases if r['draft'] and MARKER in (r.get('body') or '')]
     if len(matches) > 1: raise ValueError('Multiple releases use the requested tag')
     notes = marker + '\n\nNative A4 backlight controller with independent warmth scheduling.\n\n'
     notes += 'Physical A4 native-control, repeated-write and playback acceptance must be recorded separately from CI.\n'
@@ -91,6 +106,13 @@ def publish(directory, repo, expected_sha, state, tag):
         if not release['draft'] or marker not in (release.get('body') or ''):
             raise ValueError('Existing published/unmanaged release is immutable')
         if not testing and release['target_commitish'] != expected_sha: raise ValueError('Existing draft targets a different source')
+        if testing and release['tag_name'] != tag:
+            # Uploads resolve a release by tag. Repair identity before uploading any new group.
+            release = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH',
+                          dict(tag_name=tag, target_commitish=expected_sha, name=title,
+                               body=release.get('body') or marker, draft=True, prerelease=False, make_latest='false'))
+            if release['tag_name'] != tag or not release['draft']:
+                raise ValueError('Cannot recover permanent draft identity')
     else:
         # Never repoint an existing tag as a side effect of release creation.
         refs = api(f'repos/{repo}/git/matching-refs/tags/{tag}')
@@ -112,7 +134,7 @@ def publish(directory, repo, expected_sha, state, tag):
         if asset.get('digest') != 'sha256:' + hashlib.sha256(p.read_bytes()).hexdigest():
             raise ValueError('Remote asset digest does not match qualified bytes')
     if testing:
-        groups = sorted([a for a in current['assets'] if re.fullmatch(r'BUILD_INFO-[0-9a-f]{12}-[0-9]+(?:-[0-9]+)?\.json', a['name'])], key=lambda a: a['created_at'], reverse=True)
+        groups = complete_testing_groups(current['assets'])
         keep = {a['name'][11:-5] for a in groups[:2]}
         # Only remove this workflow's own older, complete snapshot groups.
         for old in groups[2:]:
@@ -130,7 +152,7 @@ def publish(directory, repo, expected_sha, state, tag):
             notes += f'- [{snapshot}]({asset["browser_download_url"]}) · [metadata]({metadata["browser_download_url"]})\n'
     else:
         notes += f'\nSource: {expected_sha}\n\nAPK SHA-256: {info["apk_sha256"]}\n'
-    final = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH', dict(name=title, body=notes, draft=state == 'draft', prerelease=state == 'prerelease', make_latest='false'))
+    final = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH', dict(tag_name=tag, target_commitish=expected_sha, name=title, body=notes, draft=state == 'draft', prerelease=state == 'prerelease', make_latest='false'))
     if final['draft'] != (state == 'draft') or final['tag_name'] != tag: raise ValueError('Release state verification failed')
     print(final['html_url'])
 
