@@ -22,9 +22,12 @@ class TvActivity : Activity() {
     private var building = false
     private var controlTag = 1
     private var diagnostics = false
+    private var renderedRoot = false
     private var scheduleDraft: MutableList<PhaseSetting>? = null
     private val refresh = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) { refreshStatus(intent.getStringExtra("status")) }
+        override fun onReceive(context: Context, intent: Intent) {
+            if (renderedRoot != prefs.rootBackend) render() else refreshStatus(intent.getStringExtra("status"))
+        }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +48,7 @@ class TvActivity : Activity() {
         val oldScroll = if (::rows.isInitialized) (rows.parent as? ScrollView)?.scrollY ?: 0 else 0
         controlTag = 1
         building = true
+        renderedRoot = prefs.rootBackend
         rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(48, 24, 48, 32); setBackgroundColor(Color.rgb(18, 22, 30)) }
         setContentView(ScrollView(this).apply { isFillViewport = true; addView(rows) })
         text("Red Moon TV", 30f).setTypeface(null, Typeface.BOLD)
@@ -63,11 +67,17 @@ class TvActivity : Activity() {
             AlertDialog.Builder(this).setMessage("Clears the saved original and any uncertain write. Scheduling stays paused. Use only after checking the native TV Backlight setting.")
                 .setNegativeButton("Cancel", null).setPositiveButton("Keep") { _, _ -> command("keep"); render() }.show()
         }
-        button("Read native backlight (APK context)") { command("read") }.requestFocus()
+        text("Selected backlight backend: ${if (prefs.rootBackend) "Root worker (experimental)" else "APK worker (default)"}", 16f)
+        button(if (prefs.rootBackend) "Select ordinary APK backend" else "Select root fallback") {
+            AlertDialog.Builder(this).setTitle("Change backlight backend")
+                .setMessage("Pause scheduling and Restore or Keep any saved session first. Root uses a single private 32-bit worker and may request Magisk permission on Read. It does not bypass JNI namespaces or service permissions automatically. No panel write occurs on selection. Qualification is reset for the selected backend.")
+                .setNegativeButton("Cancel", null).setPositiveButton("Select") { _, _ -> command(if (prefs.rootBackend) "use_apk" else "use_root") }.show()
+        }
+        button("Read native backlight (selected backend)") { command("read") }.requestFocus()
         button("Restart native worker and read (no panel write)") { command("read_restart") }
         button("Test a nearby native level for 15 seconds, then restore") {
             AlertDialog.Builder(this).setTitle("Native backlight probe")
-                .setMessage("Tests a nearby five-point change using the TV API and attempts restoration after 15 seconds. Check the actual screen and native Backlight slider. Uses the installed vendor API from the APK. Root is not requested. If interrupted, restore in TV Settings. The test does not qualify fades or input switching.")
+                .setMessage("Tests a nearby five-point change using the selected backend and attempts restoration after 15 seconds. Check the actual screen and native Backlight slider. The root backend may request Magisk permission. If interrupted, restore in TV Settings. The test does not qualify fades or input switching.")
                 .setNegativeButton("Cancel", null).setPositiveButton("Test") { _, _ -> command("probe") }.show()
         }
         button("Revert current preview") { command("revert") }

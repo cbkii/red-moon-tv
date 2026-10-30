@@ -13,7 +13,7 @@ class BacklightControllerTest {
     }
     private class Fake : BacklightBackend {
         var value = 66
-        var picture = "boot:picture"
+        var picture: String? = "boot:picture"
         var lostResponse = false
         var held = false
         var beforeWrite: (() -> Unit)? = null
@@ -77,6 +77,23 @@ class BacklightControllerTest {
         controller.begin("schedule"); controller.write(66)
         assertNull(store.record); assertTrue(native.writes.isEmpty())
         controller.release()
+    }
+
+    @Test fun missing_context_does_not_block_a_read_but_never_authorises_a_setter() {
+        val native = Fake(); native.picture = null
+        val store = Memory(); val controller = BacklightController(native, store, "session")
+        assertEquals(66, controller.read())
+        try { controller.begin("probe"); fail() } catch (_: IllegalStateException) {}
+        assertFalse(native.held); assertNull(store.record); assertTrue(native.writes.isEmpty())
+    }
+    @Test fun backend_context_identity_prevents_cross_backend_restoration() {
+        val native = Fake(); native.picture = "apk:boot:picture"
+        val store = Memory(); val controller = BacklightController(native, store, "first")
+        controller.begin("probe"); controller.write(61); controller.release()
+        native.picture = "root:boot:picture"
+        val replacement = BacklightController(native, store, "second")
+        try { replacement.restore(); fail() } catch (_: IllegalStateException) {}
+        assertEquals(listOf(61), native.writes); assertNotNull(store.record); assertFalse(native.held)
     }
 
 }

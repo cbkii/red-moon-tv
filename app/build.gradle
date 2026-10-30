@@ -46,7 +46,7 @@ android {
         manifestPlaceholders = [appLabel: 'Red Moon TV']
         buildConfigField 'String', 'SOURCE_SHA', '"' + sourceSha + '"'
         buildConfigField 'String', 'BUILD_ID', '"' + buildIdentity + '"'
-        buildConfigField 'String', 'BACKEND_PROTOCOL', '"apk-jni-v2"'
+        buildConfigField 'String', 'BACKEND_PROTOCOL', '"apk-jni-v3/root-pipe-v1"'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

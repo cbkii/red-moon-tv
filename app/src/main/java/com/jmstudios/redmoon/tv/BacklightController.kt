@@ -25,7 +25,7 @@ class BacklightController(private val backend: BacklightBackend, private val jou
         backend.claim(); claimed = true
         try {
             val current = backend.read()
-            val context = backend.context() ?: error("No native context")
+            val context = backend.context()?.takeIf { it.isNotBlank() } ?: error("No native context; reads are available, writes blocked")
             val prior = journal.load()
             // Never erase a pending/previous-process recovery transaction on a resume request.
             check(prior == null || (prior.pending == null && prior.session == session && prior.kind == kind)) {

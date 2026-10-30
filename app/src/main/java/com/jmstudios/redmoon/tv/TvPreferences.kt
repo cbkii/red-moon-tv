@@ -12,7 +12,15 @@ class TvPreferences(private val context: Context) {
         get() = store.getBoolean("backlight", false)
         set(value) { store.edit().putBoolean("backlight", value).apply() }
     val identityReady: Boolean get() = identity != null
-    val signature: String get() = identity ?: ""
+    val signature: String get() = identity?.let { "$it:backend=${if (rootBackend) "root" else "apk"}" } ?: ""
+    val rootBackend: Boolean get() = store.getBoolean("root-backend", false)
+    /** Called only by the serial controller after releasing its worker and checking the journal. */
+    fun selectBackend(root: Boolean) {
+        check(!backlightEnabled)
+        check(store.edit().putBoolean("root-backend", root).putBoolean("native-qualified", false)
+            .putBoolean("fades-qualified", false).putBoolean("probe-restored", false)
+            .remove("native-diagnostics").remove("first-initialisation-error").commit()) { "Cannot persist backend selection" }
+    }
     fun prepareIdentity(ready: () -> Unit = {}) {
         val app = context.applicationContext
         val main = android.os.Handler(android.os.Looper.getMainLooper())
@@ -25,7 +33,8 @@ class TvPreferences(private val context: Context) {
         kotlin.concurrent.thread(name = "a4-vendor-identity", isDaemon = true) {
             val binding = try {
                 val info = app.packageManager.getApplicationInfo("com.android.tv.settings", android.content.pm.PackageManager.GET_SHARED_LIBRARY_FILES)
-                (listOf(info.sourceDir) + (info.sharedLibraryFiles?.toList() ?: emptyList())).joinToString(":") { digest(File(it)) }
+                (listOf(info.sourceDir) + (info.splitSourceDirs?.toList() ?: emptyList()) +
+                    (info.sharedLibraryFiles?.toList() ?: emptyList())).joinToString(":") { digest(File(it)) }
             } catch (_: Exception) { "binding-unavailable" }
             val result = android.os.Build.FINGERPRINT + ":" + BuildConfig.BACKEND_PROTOCOL + ":" + BuildConfig.SOURCE_SHA +
                 ":" + BuildConfig.BUILD_ID + ":" + binding + ":" + digest(File("/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so"))

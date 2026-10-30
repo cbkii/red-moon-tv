@@ -9,9 +9,19 @@ import org.json.JSONObject
 object DiagnosticsExporter {
     fun report(context: Context): String {
         val prefs = TvPreferences(context)
-        return JSONObject().put("schema", 2).put("package", context.packageName)
+        val runtime = Runtime.getRuntime()
+        val journal = try { RecoveryJournal(context).load()?.let {
+            JSONObject().put("original", it.original).put("confirmed", it.confirmed)
+                .put("pending", it.pending ?: JSONObject.NULL).put("context", it.context).put("kind", it.kind)
+        } ?: JSONObject.NULL } catch (error: Exception) { "unreadable: ${error.message}" }
+        return JSONObject().put("schema", 3).put("package", context.packageName)
             .put("source_sha", BuildConfig.SOURCE_SHA).put("build_id", BuildConfig.BUILD_ID)
             .put("backend_protocol", BuildConfig.BACKEND_PROTOCOL).put("firmware", Build.FINGERPRINT)
+            .put("selected_backend", if (prefs.rootBackend) "root-pipe-v1" else "apk-jni-v3")
+            .put("native_call_stats", NativeCallStats.snapshot())
+            .put("app_heap_used_bytes", runtime.totalMemory() - runtime.freeMemory())
+            .put("app_heap_limit_bytes", runtime.maxMemory()).put("recovery", journal)
+            .put("uptime_ms", android.os.SystemClock.elapsedRealtime())
             .put("abi", Build.SUPPORTED_ABIS.joinToString(",")).put("status", prefs.status)
             .put("identity_ready", prefs.identityReady)
             .put("first_initialisation_error", prefs.store.getString("first-initialisation-error", "none"))

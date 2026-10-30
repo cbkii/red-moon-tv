@@ -43,3 +43,7 @@ Do not call the result fully compatible until all declared native, context/lifec
 ## Latest reported device result and retest
 
 The signed 9fa / 41041255395-1 APK was installed and produced `rmd.txt`: native initialisation failed with a duplicate TV-APK classloader/JNI ownership error; recovery was not pending and no physical native-control/fade qualification was acknowledged. This is a failed native read, superseding the earlier absence of runtime evidence. The updated source pins one loader/first initialisation result and exposes the original failure stage. Test the updated signed APK with Read first; if it reports a retained failure, copy Diagnostics before using the explicit read-only Restart worker operation. See A4-REVIEW-RESOLUTION.md. No claim of physical compatibility follows from the code fix.
+
+## Root fallback and performance evidence
+
+The new root backend is explicitly selectable after pausing and resolving saved recovery; it is not automatic failover. Requalify each backend separately. See [root/performance procedure and collector](A4-ROOT-AND-PERFORMANCE.md). Before declaring root functional, test denied/revoked Magisk access, delayed permission approval beyond the 20-second client deadline, root/JNI death and the five-second worker deadline, pipe closure on app death, standby cleanup, package replacement and cross-variant lease exclusion. Check that failed/late sessions never perform an unexpected setter. Both backends load the installed library and can still fail at namespace/service permissions.

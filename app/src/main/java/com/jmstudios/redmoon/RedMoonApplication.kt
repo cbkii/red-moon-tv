@@ -19,6 +19,8 @@ class RedMoonApplication: Application() {
         Log.i("onCreate -- Initializing appContext")
         app = this
         super.onCreate()
+        // The private JNI process needs no legacy profiles, migrations, themes or EventBus.
+        if (android.os.Build.VERSION.SDK_INT >= 28 && Application.getProcessName().endsWith(":backlight")) return
         upgradeFrom(Config.fromVersionCode)
         val theme = when (Config.darkThemeFlag) {
             true -> AppCompatDelegate.MODE_NIGHT_YES

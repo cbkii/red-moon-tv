@@ -38,13 +38,16 @@ class A4NativeService : Service() {
                         val binding = initialisation.get { A4NativeBridge(this) }
                         if (request.data.getString("operation") == "write") {
                             check(lease != null) { "Claim live control before writing" }
+                            binding.context()
                             binding.write(request.data.getInt("value", -1))
                         }
                         val value = binding.read()
                         result.putInt("level", value)
                         result.putInt("minimum", binding.minimum)
                         result.putInt("maximum", binding.maximum)
-                        result.putString("context", binding.context())
+                        // A missing context must never hide an otherwise useful read-only result.
+                        try { result.putString("context", "apk:" + binding.context()) }
+                        catch (error: Exception) { result.putString("context-error", error.message) }
                         result.putString("diagnostics", binding.diagnostics())
                     }
                     else -> error("Unknown native operation")

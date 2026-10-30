@@ -58,6 +58,7 @@ class TvDisplayService : Service() {
             } else {
                 clearWarmth()
                 status("Standby: native writes suspended")
+                submit { controller.close() } // Drop the worker/lease in standby; retain recovery evidence.
             }
         }
     }
@@ -65,7 +66,7 @@ class TvDisplayService : Service() {
         super.onCreate()
         prefs = TvPreferences(this)
         prefs.prepareIdentity { if (!destroyed) reconcile(false) }
-        controller = BacklightController(A4BacklightBackend(this), RecoveryJournal(this), UUID.randomUUID().toString())
+        controller = newController()
         recoveryRequired = RecoveryJournal.exists(this)
         if (recoveryRequired) {
             prefs.backlightEnabled = false
@@ -86,6 +87,16 @@ class TvDisplayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val command = intent?.getStringExtra("command") ?: "reconcile"
         when (command) {
+            "use_root", "use_apk" -> {
+                if (prefs.backlightEnabled || preview || overridePhase != null) status("Pause native scheduling/preview before changing backend")
+                else submit {
+                    check(controller.pendingRecovery() == null) { "Restore or Keep the saved session before changing backend" }
+                    controller.close()
+                    prefs.selectBackend(command == "use_root")
+                    controller = newController()
+                    status("${if (prefs.rootBackend) "Root" else "APK"} backend selected. Read first; physical qualification must be repeated.")
+                }
+            }
             "read", "read_restart" -> {
                 if (command == "read_restart" && (prefs.backlightEnabled || preview)) status("Pause scheduling/preview before restarting the native worker")
                 else submit {
@@ -128,6 +139,9 @@ class TvDisplayService : Service() {
         return START_STICKY
     }
     @Volatile private var lastStatus = ""
+    private fun newController() = BacklightController(
+        if (prefs.rootBackend) A4RootBacklightBackend(this) else A4BacklightBackend(this),
+        RecoveryJournal(this), UUID.randomUUID().toString())
     private fun status(message: String, persist: Boolean = true) {
         if (lastStatus == message) return
         lastStatus = message
@@ -331,6 +345,10 @@ class TvDisplayService : Service() {
         super.onDestroy()
     }
     override fun onBind(intent: Intent?) = null
+    override fun dump(fd: java.io.FileDescriptor, writer: java.io.PrintWriter, args: Array<out String>) {
+        writer.println(DiagnosticsExporter.report(this))
+        writer.println("pending_native=${pendingNative.get()}; queue=${worker.queue.size}; screen_on=$screenOn; preview=$preview")
+    }
     companion object {
         private const val CHANNEL = "tv-display"
         const val STATUS = "com.cbkii.redmoontv.STATUS"

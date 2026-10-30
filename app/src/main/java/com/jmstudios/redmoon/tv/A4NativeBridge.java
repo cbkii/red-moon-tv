@@ -15,12 +15,12 @@ import java.util.List;
 
 /** Loads the installed vendor bindings in an APK native-library namespace; no vendor redistribution. */
 public final class A4NativeBridge {
-    public static final String PROTOCOL = "apk-jni-v2";
+    public static final String PROTOCOL = "installed-jni-v3";
     private static final String KEY = "g_disp__disp_back_light";
     private static Class<?> installedApi;
     private static String installedSource;
     public static volatile String initialisationStage = "not started";
-    private final Context app;
+    private final String bootIdentity;
     private final Object config;
     private final Method getter, setter;
     private final String bindingSource;
@@ -28,13 +28,17 @@ public final class A4NativeBridge {
     public final int minimum, maximum;
 
     public A4NativeBridge(Context context) throws Exception {
-        app = context;
+        this(installedPaths(context), bootIdentity(context));
+    }
+    /** Root entry point receives only paths resolved by our package manager, not shell commands. */
+    public A4NativeBridge(String dexPath, String boot) throws Exception {
+        bootIdentity = boot;
         if (!Build.DEVICE.startsWith("xiaoyushan")) throw new IllegalStateException("Unsupported device: " + Build.DEVICE);
         if (Process.is64Bit()) throw new IllegalStateException("A4 vendor JNI requires a 32-bit process");
         File library = new File("/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so");
         if (!library.canRead()) throw new IllegalStateException("Installed vendor JNI is unavailable");
         long began = SystemClock.elapsedRealtime();
-        Class<?> api = resolveApi(context);
+        Class<?> api = resolveApi(dexPath);
         bindingSource = installedSource;
         initialisationStage = "getInstance";
         config = api.getMethod("getInstance").invoke(null);
@@ -50,15 +54,23 @@ public final class A4NativeBridge {
         loadedAt = SystemClock.elapsedRealtime() - began;
         initialisationStage = "ready";
     }
-    private static synchronized Class<?> resolveApi(Context context) throws Exception {
-        if (installedApi != null) return installedApi;
-        initialisationStage = "resolve installed bindings";
+    public static String installedPaths(Context context) throws Exception {
         ApplicationInfo installed = context.getPackageManager().getApplicationInfo("com.android.tv.settings", android.content.pm.PackageManager.GET_SHARED_LIBRARY_FILES);
         List<String> paths = new ArrayList<>();
         if (installed.sharedLibraryFiles != null) for (String path : installed.sharedLibraryFiles) paths.add(path);
         paths.add(installed.sourceDir);
         if (installed.splitSourceDirs != null) for (String path : installed.splitSourceDirs) paths.add(path);
-        String dexPath = android.text.TextUtils.join(File.pathSeparator, paths);
+        return android.text.TextUtils.join(File.pathSeparator, paths);
+    }
+    private static String bootIdentity(Context context) {
+        String id = BootIdentity.read();
+        if (id != null) return "id=" + id;
+        int count = Settings.Global.getInt(context.getContentResolver(), "boot_count", -1);
+        return count < 0 ? null : "count=" + count;
+    }
+    private static synchronized Class<?> resolveApi(String dexPath) throws Exception {
+        if (installedApi != null) return installedApi;
+        initialisationStage = "resolve installed bindings";
         Class<?> api;
         String source;
         try {
@@ -88,9 +100,8 @@ public final class A4NativeBridge {
     public String context() throws Exception {
         int picture = (Integer) getter.invoke(config, "g_video__picture_mode");
         if (picture < 0) throw new IllegalStateException("Picture context unavailable");
-        int boot = Settings.Global.getInt(app.getContentResolver(), "boot_count", -1);
-        if (boot < 0) throw new IllegalStateException("Boot context unavailable; writes cannot be qualified");
-        return Build.FINGERPRINT + ":boot=" + boot + ":picture=" + picture;
+        if (bootIdentity == null) throw new IllegalStateException("Boot context unavailable; read allowed, writes blocked");
+        return Build.FINGERPRINT + ":boot:" + bootIdentity + ":picture=" + picture;
     }
     public String diagnostics() {
         return PROTOCOL + "; uid=" + Process.myUid() + "; abi=" + android.text.TextUtils.join(",", Build.SUPPORTED_ABIS)

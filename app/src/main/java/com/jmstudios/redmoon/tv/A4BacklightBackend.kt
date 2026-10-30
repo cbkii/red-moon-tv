@@ -71,6 +71,9 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
         return binding
     }
     @Synchronized private fun call(operation: String, value: Int? = null): Bundle {
+        val began = SystemClock.elapsedRealtime()
+        var failed = true
+        try {
         val binding = connect()
         if (operation != "hello" && !binding.session.established) call("hello")
         check(current(binding)) { "Native connection changed; reconcile before retrying" }
@@ -105,18 +108,20 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
             if (operation == "hello") edit.remove("first-initialisation-error")
             result.getString("diagnostics")?.let { edit.putString("native-diagnostics", it) }
             result.getString("first-initialisation-error")?.let { edit.putString("first-initialisation-error", it) }
+            result.getString("context-error")?.let { edit.putString("native-diagnostics", "${result.getString("diagnostics")}; context unavailable: $it; reads allowed, writes blocked") }
             edit.apply()
             check(!result.containsKey("error")) { result.getString("error") ?: "Native failure" }
+            failed = false
             return result
         } catch (error: RemoteException) {
             retire(binding)
             throw IllegalStateException("Native worker died; outcome unknown. Read before retrying", error)
         } finally { if (binding.pending === done) binding.pending = null }
+        } finally { NativeCallStats.record("apk", operation, SystemClock.elapsedRealtime() - began, failed) }
     }
     override fun read(): Int {
         val result = call("read")
         nativeContext = result.getString("context")
-        check(!nativeContext.isNullOrBlank()) { "Missing native context" }
         check(result.getInt("minimum", -1) == 0 && result.getInt("maximum", -1) == 100) { "Unsupported native range" }
         val level = result.getInt("level", -1)
         check(level in 0..100) { "Invalid native readback" }
