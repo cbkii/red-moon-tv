@@ -62,6 +62,14 @@ class PublisherTests(unittest.TestCase):
                 self.assertEqual(gh.call_count, 1) # No upload, deletion or tag mutation on rerun.
                 writes=[c for c in api.call_args_list if len(c.args)>1 and c.args[1]=='PATCH']
                 self.assertTrue(writes[0].args[2]['draft'])
+                # A final draft PATCH may replace every temporary download URL.
+                # Notes must still identify both files without embedding those URLs.
+                notes = writes[0].args[2]['body']
+                self.assertIn('download the named files from Assets below', notes)
+                for asset in assets:
+                    self.assertNotIn(asset['browser_download_url'], notes)
+                    if asset['name'].startswith(('BUILD_INFO-', 'red-moon-tv-')):
+                        self.assertIn(asset['name'], notes)
     def test_existing_mismatched_asset_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp); self.bundle(root)
