@@ -83,6 +83,10 @@ def publish(directory, repo, expected_sha, state, tag):
         if info['channel'] == 'release' and prior['channel'] == 'release' and not previous['draft'] and info['version_code'] <= prior['version_code']:
             raise ValueError('Stable versionCode must increase over every published stable APK')
     matches = [r for r in releases if r['tag_name'] == tag]
+    if testing and not matches:
+        # GitHub may give an unpublished draft an untagged placeholder if a PATCH
+        # omitted its intended identity. Recover only our uniquely managed draft.
+        matches = [r for r in releases if r['draft'] and MARKER in (r.get('body') or '')]
     if len(matches) > 1: raise ValueError('Multiple releases use the requested tag')
     notes = marker + '\n\nNative A4 backlight controller with independent warmth scheduling.\n\n'
     notes += 'Physical A4 native-control, repeated-write and playback acceptance must be recorded separately from CI.\n'
@@ -130,7 +134,7 @@ def publish(directory, repo, expected_sha, state, tag):
             notes += f'- [{snapshot}]({asset["browser_download_url"]}) · [metadata]({metadata["browser_download_url"]})\n'
     else:
         notes += f'\nSource: {expected_sha}\n\nAPK SHA-256: {info["apk_sha256"]}\n'
-    final = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH', dict(name=title, body=notes, draft=state == 'draft', prerelease=state == 'prerelease', make_latest='false'))
+    final = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH', dict(tag_name=tag, target_commitish=expected_sha, name=title, body=notes, draft=state == 'draft', prerelease=state == 'prerelease', make_latest='false'))
     if final['draft'] != (state == 'draft') or final['tag_name'] != tag: raise ValueError('Release state verification failed')
     print(final['html_url'])
 
