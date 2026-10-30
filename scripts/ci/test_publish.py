@@ -33,10 +33,10 @@ class PublisherTests(unittest.TestCase):
     def bundle(self, root):
         suffix = 'aaaaaaaaaaaa-123'
         info = dict(schema=1, source_sha='a'*40, channel='testing', version_name='0.0.0-testing', version_code=999999,
-                    package='com.cbkii.redmoontv.testing', build_run_id='123', apk_sha256=hashlib.sha256(b'apk').hexdigest())
+                    package='com.cbkii.redmoontv.testing', build_run_id='123', signer_sha256='c'*64, apk_sha256=hashlib.sha256(b'apk').hexdigest())
         (root/f'red-moon-tv-TESTING-{suffix}.apk').write_bytes(b'apk')
         (root/f'BUILD_INFO-{suffix}.json').write_text(json.dumps(info))
-        (root/f'SIGNER-{suffix}.txt').write_text('verified signer')
+        (root/f'SIGNER-{suffix}.txt').write_text('Signer #1 certificate SHA-256 digest: '+'c'*64)
         (root/f'SHA256SUMS-{suffix}').write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in sorted(root.iterdir())))
         return info
     def test_published_release_is_never_modified(self):
@@ -57,7 +57,7 @@ class PublisherTests(unittest.TestCase):
             root=Path(temp); self.bundle(root)
             assets=[dict(id=i, name=p.name, digest='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest(), created_at='2026-10-26T00:00:00Z', browser_download_url='https://example.invalid/'+p.name) for i,p in enumerate(root.iterdir())]
             release=dict(id=1, tag_name='000-testing-only', draft=True, body=MARKER, assets=assets, html_url='https://github.com/cbkii/red-moon-tv/releases')
-            with patch('publish.gh', return_value=json.dumps([[release]])) as gh, patch('publish.api', return_value=release) as api, contextlib.redirect_stdout(io.StringIO()):
+            with patch('publish.history', return_value=[]) as history, patch('publish.gh', return_value=json.dumps([[release]])) as gh, patch('publish.api', return_value=release) as api, contextlib.redirect_stdout(io.StringIO()):
                 publisher.publish(root, 'cbkii/red-moon-tv', 'a'*40, 'draft', '')
                 self.assertEqual(gh.call_count, 1) # No upload, deletion or tag mutation on rerun.
                 writes=[c for c in api.call_args_list if len(c.args)>1 and c.args[1]=='PATCH']
@@ -67,6 +67,19 @@ class PublisherTests(unittest.TestCase):
             root=Path(temp); self.bundle(root)
             assets=[dict(id=i, name=p.name, digest='sha256:wrong') for i,p in enumerate(root.iterdir())]
             release=dict(id=1, tag_name='000-testing-only', draft=True, body=MARKER, assets=assets)
-            with patch('publish.gh', return_value=json.dumps([[release]])) as gh, patch('publish.api', return_value=release):
+            with patch('publish.history', return_value=[]), patch('publish.gh', return_value=json.dumps([[release]])) as gh, patch('publish.api', return_value=release):
                 with self.assertRaises(ValueError): publisher.publish(root, 'cbkii/red-moon-tv', 'a'*40, 'draft', '')
                 self.assertEqual(gh.call_count, 1)
+    def test_signer_change_is_rejected_before_mutating_remote(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self.bundle(root)
+            prior = dict(channel='testing', signer_sha256='d'*64)
+            with patch('publish.gh', return_value='[[]]'), patch('publish.history', return_value=[(dict(draft=True), prior)]), patch('publish.api') as api:
+                with self.assertRaises(ValueError): publisher.publish(root, 'cbkii/red-moon-tv', 'a'*40, 'draft', '')
+                api.assert_not_called()
+    def test_unexpected_extra_file_is_rejected_even_with_valid_apk(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self.bundle(root); (root/'extra.txt').write_text('extra')
+            with patch('publish.gh') as gh:
+                with self.assertRaises(ValueError): publisher.publish(root, 'cbkii/red-moon-tv', 'a'*40, 'draft', '')
+                gh.assert_not_called()

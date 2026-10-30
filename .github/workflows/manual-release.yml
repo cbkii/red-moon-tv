@@ -124,6 +124,8 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
+      - name: Install APK verification tools
+        run: 'env JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;32.0.0"'
       - name: Promote exact accepted stable-package bytes (no build or signing)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -134,4 +136,4 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH"
           python3 -c 'import os,pathlib; pathlib.Path("acceptance.json").write_text(os.environ["ACCEPTANCE_JSON"])'
-          python3 scripts/ci/promote.py --release-id "$RELEASE_ID" --acceptance acceptance.json
+          python3 scripts/ci/promote.py --release-id "$RELEASE_ID" --acceptance acceptance.json --tools "$ANDROID_SDK_ROOT/build-tools/32.0.0"

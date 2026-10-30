@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 from envelope import validate, group, MARKER
 
 
@@ -25,6 +26,21 @@ def api(path, method='GET', data=None):
     return json.loads(result) if result.strip() else None
 
 
+def history(releases, repo):
+    for previous in releases:
+        if not any(mark in (previous.get('body') or '') for mark in (MARKER, '<!-- red-moon-tv-release-managed -->')): continue
+        for asset in previous.get('assets', []):
+            name = asset['name']
+            if not re.fullmatch(r'BUILD_INFO-[A-Za-z0-9.+_-]+\.json', name): continue
+            with tempfile.TemporaryDirectory(prefix='red-moon-history-') as temp:
+                gh('release', 'download', previous['tag_name'], '--repo', repo, '--pattern', name, '--dir', temp)
+                content = (Path(temp) / name).read_bytes()
+                if asset.get('digest') != 'sha256:' + hashlib.sha256(content).hexdigest():
+                    raise ValueError('Previous managed metadata digest mismatch')
+                prior = validate(json.loads(content))
+            yield previous, prior
+
+
 def publish(directory, repo, expected_sha, state, tag):
     if state != 'draft': raise ValueError('Only draft preparation is allowed; use promote.py after exact-artifact acceptance')
     files = sorted(directory.iterdir())
@@ -33,6 +49,13 @@ def publish(directory, repo, expected_sha, state, tag):
         raise ValueError('Expected one closed qualified snapshot')
     info = validate(json.loads(infos[0].read_text()))
     if info['source_sha'] != expected_sha: raise ValueError('Wrong qualified source')
+    suffix = infos[0].name[len('BUILD_INFO-'):-5]
+    prefix = 'TESTING-' if info['channel'] == 'testing' else ''
+    expected_names = {f'BUILD_INFO-{suffix}.json', f'red-moon-tv-{prefix}{suffix}.apk', f'SIGNER-{suffix}.txt', f'SHA256SUMS-{suffix}'}
+    if {p.name for p in files} != expected_names: raise ValueError('Qualified snapshot must contain exactly its four managed files')
+    signer = (directory / f'SIGNER-{suffix}.txt').read_text()
+    cert = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})', signer)
+    if not cert or cert.group(1).lower() != info.get('signer_sha256'): raise ValueError('Qualified signer identity mismatch')
     apk = next(p for p in files if p.suffix == '.apk')
     if hashlib.sha256(apk.read_bytes()).hexdigest() != info['apk_sha256']: raise ValueError('APK hash mismatch')
     sumfile = next(p for p in files if p.name.startswith('SHA256SUMS-'))
@@ -54,6 +77,11 @@ def publish(directory, repo, expected_sha, state, tag):
         title = 'Red Moon TV ' + tag
     releases = json.loads(gh('api', '--paginate', '--slurp', f'repos/{repo}/releases?per_page=100'))
     releases = [release for page in releases for release in page]
+    for previous, prior in history(releases, repo):
+        if prior.get('signer_sha256') and prior['signer_sha256'] != info['signer_sha256']:
+            raise ValueError('Signing certificate differs from previous managed snapshot')
+        if info['channel'] == 'release' and prior['channel'] == 'release' and not previous['draft'] and info['version_code'] <= prior['version_code']:
+            raise ValueError('Stable versionCode must increase over every published stable APK')
     matches = [r for r in releases if r['tag_name'] == tag]
     if len(matches) > 1: raise ValueError('Multiple releases use the requested tag')
     notes = marker + '\n\nNative A4 backlight controller with independent warmth scheduling.\n\n'
