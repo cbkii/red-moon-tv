@@ -14,6 +14,8 @@ Implemented source changes:
 - Manual prepare/promote release separation, run-attempt asset naming, signer continuity/closed handoff validation and hash-bound stable acceptance.
 - 25 Python script contract tests pass locally. The earlier CI head passed 25 debug JVM tests; lint identified literal flags in two loader calls, now replaced with the named PackageManager constant. Current-head complete CI remains the acceptance authority.
 
-External gates remain deliberately open: APK compile/lint on current-head CI; bootstrap infrastructure on master; signing secrets/certificate continuity; installed native read/probe/restore; context/source/HDR behaviour; lifecycle and cross-variant lease; persistence/fades; physical remote and playback/warmth matrix; exact stable-package acceptance. Update with actual run/asset evidence; never treat this ledger as a test result.
+Infrastructure PR #2 merged as 43f8dfc4330795561bd2765537edf3f523d54203 after successful run 41040212225. The application branch incorporates that foundation; the native TV manifest remains authoritative. Phone-era location collection is disabled, and per-step progress/readback no longer rewrites the preferences XML.
+
+External gates remain deliberately open: APK compile/lint on current-head CI; signing secrets/certificate continuity; installed native read/probe/restore; context/source/HDR behaviour; lifecycle and cross-variant lease; persistence/fades; physical remote and playback/warmth matrix; exact stable-package acceptance. Update with actual run/asset evidence; never treat this ledger as a test result.
 
 The lifecycle design conservatively pauses after an interrupted journaled session because complete source/HDR context is unavailable. This is a real qualification boundary, not an assertion of unattended recovery across every firmware state.

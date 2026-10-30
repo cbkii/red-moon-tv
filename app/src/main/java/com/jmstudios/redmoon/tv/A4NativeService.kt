@@ -11,10 +11,18 @@ class A4NativeService : Service() {
     private val thread = HandlerThread("a4-native")
     private var api: A4NativeBridge? = null
     private var lease: LocalServerSocket? = null
+    private val baseDiagnostics: String by lazy {
+        val source = try { packageManager.getApplicationInfo("com.android.tv.settings", 0).sourceDir }
+            catch (_: Exception) { "binding package unavailable" }
+        "${A4NativeBridge.PROTOCOL}; device=${Build.DEVICE}; uid=${Process.myUid()}; abi=${Build.SUPPORTED_ABIS.joinToString(",")}; bindings=$source; JNI=/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so"
+    }
     override fun onCreate() { super.onCreate(); thread.start() }
     private val endpoint by lazy {
         Messenger(Handler(thread.looper) { request ->
-            val result = Bundle().apply { putInt("pid", Process.myPid()) }
+            val result = Bundle().apply {
+                putInt("pid", Process.myPid())
+                if (request.data.getString("operation") in listOf("hello", "read", "write")) putString("diagnostics", baseDiagnostics)
+            }
             try {
                 when (request.data.getString("operation")) {
                     "hello" -> Unit

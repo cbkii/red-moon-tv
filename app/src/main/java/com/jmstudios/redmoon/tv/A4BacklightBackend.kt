@@ -56,6 +56,9 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
             }
             val result = answer ?: error("Missing native response")
             workerPid = result.getInt("pid", -1)
+            result.getString("diagnostics")?.let {
+                app.getSharedPreferences("tv-display-v1", Context.MODE_PRIVATE).edit().putString("native-diagnostics", it).apply()
+            }
             check(!result.containsKey("error")) { result.getString("error") ?: "Native failure" }
             return result
         } catch (error: RemoteException) {
@@ -72,7 +75,7 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
         check(level in 0..100) { "Invalid native readback" }
         app.getSharedPreferences("tv-display-v1", Context.MODE_PRIVATE).edit()
             .putString("native-diagnostics", result.getString("diagnostics", ""))
-            .putInt("confirmed-native", level).apply()
+            .apply()
         return level
     }
     override fun claim() { call("claim") }

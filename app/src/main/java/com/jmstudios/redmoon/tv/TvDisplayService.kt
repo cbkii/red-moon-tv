@@ -102,11 +102,13 @@ class TvDisplayService : Service() {
         main.post { stopIfIdle() }
         return START_STICKY
     }
-    private fun status(message: String) {
-        if (prefs.status == message) return
-        prefs.status = message
+    @Volatile private var lastStatus = ""
+    private fun status(message: String, persist: Boolean = true) {
+        if (lastStatus == message) return
+        lastStatus = message
+        if (persist) prefs.status = message
         Log.i("RedMoonTV", message)
-        sendBroadcast(Intent(STATUS).setPackage(packageName))
+        sendBroadcast(Intent(STATUS).setPackage(packageName).putExtra("status", message))
     }
     private fun fail(error: Exception) {
         generation.incrementAndGet()
@@ -114,7 +116,7 @@ class TvDisplayService : Service() {
         if (error is ExternalBacklightChange) manualHold = true
         else recoveryRequired = RecoveryJournal.exists(this)
         if (!RecoveryJournal.exists(this)) preview = false
-        status("Native control stopped: ${error.message}. No automatic setter retry.")
+        status("Native control stopped: ${error.message}. No automatic setter retry.\n${prefs.store.getString("native-diagnostics", "No loader diagnostics")}")
         try { controller.release() } catch (_: Exception) { controller.close() }
     }
     private fun submit(work: () -> Unit) {
@@ -159,6 +161,7 @@ class TvDisplayService : Service() {
             prefs.store.edit().putBoolean("native-blocked", false).apply()
             val duration = if (prefs.fadesQualified) setting.fadeSeconds * 1000L else 0L
             val fade = BrightnessFade(policy, setting, current, duration)
+            status("${setting.phase.title} transition: confirmed native $current → ${setting.level}")
             val began = SystemClock.elapsedRealtime()
             val session = TransitionSession(fade, current,
                 { SystemClock.elapsedRealtime() - began }, { token != generation.get() || !screenOn || destroyed }) { controller.write(it) }
@@ -166,7 +169,7 @@ class TvDisplayService : Service() {
                 if (token != generation.get() || destroyed) return
                 val running = session.tick()
                 status("${setting.phase.title}: confirmed native ${session.lastApplied} → ${setting.level}; ${if (running) "fading" else "applied"}" +
-                    if (!prefs.fadesQualified && setting.fadeSeconds > 0) "; fade disabled pending persistence qualification" else "")
+                    if (!prefs.fadesQualified && setting.fadeSeconds > 0) "; fade disabled pending persistence qualification" else "", persist = !running)
                 if (running) worker.schedule({ if (token == generation.get()) submit { step() } },
                     fade.nextDelay(SystemClock.elapsedRealtime() - began), TimeUnit.MILLISECONDS)
             }

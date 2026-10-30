@@ -24,7 +24,7 @@ class TvActivity : Activity() {
     private var diagnostics = false
     private var scheduleDraft: MutableList<PhaseSetting>? = null
     private val refresh = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) { refreshStatus() }
+        override fun onReceive(context: Context, intent: Intent) { refreshStatus(intent.getStringExtra("status")) }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,10 +34,10 @@ class TvActivity : Activity() {
     override fun onStart() { super.onStart(); registerReceiver(refresh, IntentFilter(TvDisplayService.STATUS)) }
     override fun onStop() { unregisterReceiver(refresh); super.onStop() }
     override fun onResume() { super.onResume(); if (::status.isInitialized) refreshStatus() }
-    private fun refreshStatus() {
+    private fun refreshStatus(progress: String? = null) {
         val state = try { prefs.policy().at(Instant.now(), ZoneId.systemDefault()) }
             catch (error: IllegalArgumentException) { status.text = "Invalid saved schedule: ${error.message}"; return }
-        status.text = "${prefs.status}\n${prefs.warmthStatus}\nScheduled phase: ${state.current.phase.title} · next ${state.next.setting.phase.title} at ${time(state.next.setting.startMinute)} (${ZoneId.systemDefault()})"
+        status.text = "${progress ?: prefs.status}\n${prefs.warmthStatus}\nScheduled phase: ${state.current.phase.title} · next ${state.next.setting.phase.title} at ${time(state.next.setting.startMinute)} (${ZoneId.systemDefault()})"
     }
     private fun render() {
         val oldFocus = currentFocus?.tag as? Int
@@ -60,7 +60,7 @@ class TvActivity : Activity() {
         }
         button("Keep current native level and clear saved recovery") {
             AlertDialog.Builder(this).setMessage("Clears the saved original and any uncertain write. Scheduling stays paused. Use only after checking the native TV Backlight setting.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Keep") { _, _ -> command("keep") }.show()
+                .setNegativeButton("Cancel", null).setPositiveButton("Keep") { _, _ -> command("keep"); render() }.show()
         }
         button("Read native backlight (APK context)") { command("read") }.requestFocus()
         button("Test a nearby native level for 15 seconds, then restore") {
@@ -118,7 +118,7 @@ class TvActivity : Activity() {
         button("Pause backlight changes (keep current level)") { command("pause"); render() }
         button("Pause and transfer control to another installed build") {
             AlertDialog.Builder(this).setMessage("Pauses this build, releases its live lease and clears its saved original after pending work settles. Then open the other build and Resume. The current panel level is retained.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Release control") { _, _ -> command("keep") }.show()
+                .setNegativeButton("Cancel", null).setPositiveButton("Release control") { _, _ -> command("keep"); render() }.show()
         }
         button("Pause and restore saved native backlight") { command("restore"); render() }
         text("Warmth", 23f)
@@ -197,7 +197,7 @@ class TvActivity : Activity() {
         render()
     }
     private fun command(name: String = "reconcile", phase: Phase? = null) {
-        if (name in listOf("pause", "restore")) prefs.backlightEnabled = false
+        if (name in listOf("pause", "restore", "keep")) prefs.backlightEnabled = false
         if (name in listOf("resume", "phase") && prefs.nativeQualified) prefs.backlightEnabled = true
         if (name == "warmth_off") prefs.warmthEnabled = false
         TvDisplayService.command(this, name, phase)

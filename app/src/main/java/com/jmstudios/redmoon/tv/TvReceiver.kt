@@ -16,7 +16,7 @@ class TvReceiver : BroadcastReceiver() {
 
 /** Explicit opt-in, bounded tvQuickActions commands; no arbitrary key/root command API. */
 class TvControlReceiver : BroadcastReceiver() {
-    companion object { private var lastCommandAt = -1000L }
+    companion object { private var lastCommandAt = -1000L; private var lastCommand = "" }
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != "com.cbkii.redmoontv.CONTROL" || !TvPreferences(context).store.getBoolean("external-control", false)) return
         val command = intent.getStringExtra("command") ?: return
@@ -25,8 +25,9 @@ class TvControlReceiver : BroadcastReceiver() {
         if (command == "phase" && phase == null) return
         val now = SystemClock.elapsedRealtime()
         synchronized(TvControlReceiver::class.java) {
-            if (now - lastCommandAt < 750L) return
-            lastCommandAt = now
+            val key = "$command:${phase?.name}"
+            if (key == lastCommand && now - lastCommandAt < 750L) return
+            lastCommandAt = now; lastCommand = key
         }
         TvDisplayService.command(context, command, phase)
     }
