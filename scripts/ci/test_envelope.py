@@ -24,7 +24,7 @@ class EnvelopeTests(unittest.TestCase):
     def test_reject_invalid_run(self):
         with self.assertRaises(ValueError): group(self.info(), '../1')
 
-from qualify import check_badging
+from qualify import check_badging, backend_protocol
 
 class ApkMetadataTests(unittest.TestCase):
     def info(self):
@@ -34,3 +34,10 @@ class ApkMetadataTests(unittest.TestCase):
     def test_wrong_package_or_minimum_is_rejected(self):
         for text in ["package: name='evil' versionCode='999999' versionName='0.0.0-testing'\nsdkVersion:'26'", "package: name='com.cbkii.redmoontv.testing' versionCode='999999' versionName='0.0.0-testing'\nsdkVersion:'29'"]:
             with self.assertRaises(ValueError): check_badging(text, self.info())
+    def test_backend_metadata_describes_embedded_apk_not_signer_script_revision(self):
+        self.assertEqual('apk-jni-v3/root-pipe-v1', backend_protocol(b'dex\0apk-jni-v3/root-pipe-v1\0other'))
+        self.assertEqual('apk-jni-v4/root-pipe-v1', backend_protocol(b'dex\0apk-jni-v4/root-pipe-v1\0other'))
+        self.assertEqual('apk-jni-v2', backend_protocol(b'dex\0apk-jni-v2\0other'))
+    def test_missing_unknown_or_mixed_backend_is_not_silently_labelled(self):
+        for dex in [b'unknown', b'apk-jni-v3/root-pipe-v10\0', b'apk-jni-v2\0apk-jni-v3/root-pipe-v1\0']:
+            with self.assertRaises(ValueError): backend_protocol(dex)

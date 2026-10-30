@@ -26,6 +26,16 @@ def check_badging(text, info):
         raise ValueError('Expected API 26 minimum, compatible with A4 API 28')
 
 
+def backend_protocol(dex):
+    # Identify the embedded implementation, including supported older diagnostic builds.
+    # An unknown/mixed artifact must not be labelled using this script's own source version.
+    known = ('apk-jni-v2', 'apk-jni-v3/root-pipe-v1', 'apk-jni-v4/root-pipe-v1')
+    matches = [protocol for protocol in known if protocol.encode('ascii') + b'\0' in dex]
+    if len(matches) != 1:
+        raise ValueError('Missing or ambiguous embedded backend protocol')
+    return matches[0]
+
+
 def qualify(incoming, destination, tools, expected_sha, run_id):
     if sorted(x.name for x in incoming.iterdir()) != ['BUILD_INFO.json', 'app-unsigned.apk']:
         raise ValueError('Unexpected build hand-off files')
@@ -41,6 +51,7 @@ def qualify(incoming, destination, tools, expected_sha, run_id):
     with zipfile.ZipFile(incoming / 'app-unsigned.apk') as archive:
         dex = b''.join(archive.read(name) for name in archive.namelist() if re.fullmatch(r'classes[0-9]*\.dex', name))
         if expected_sha.encode('ascii') not in dex: raise ValueError('APK does not embed the requested source identity')
+        embedded_backend = backend_protocol(dex)
         for member in archive.namelist():
             if member.startswith('/') or '..' in Path(member).parts: raise ValueError('Unsafe APK member')
             if member.startswith('lib/') and not member.startswith('lib/armeabi-v7a/'):
@@ -74,7 +85,7 @@ def qualify(incoming, destination, tools, expected_sha, run_id):
     info['unsigned_apk_sha256'] = hashlib.sha256((incoming / 'app-unsigned.apk').read_bytes()).hexdigest()
     info['workflow_sha'] = os.environ['GITHUB_WORKFLOW_SHA']
     info['build_run_attempt'] = os.environ.get('GITHUB_RUN_ATTEMPT', '1')
-    info['backend_protocol'] = 'apk-jni-v2'
+    info['backend_protocol'] = embedded_backend
     info['build_run_id'] = str(run_id)
     info['apk_sha256'] = hashlib.sha256(apk.read_bytes()).hexdigest()
     info['physical_a4_validation'] = 'not established by CI'
