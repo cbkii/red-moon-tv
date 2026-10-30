@@ -11,7 +11,8 @@ Implemented source changes:
 - Warmth setup/animation/teardown failure containment and independent custom schedule validation.
 - Atomic three-phase schedule draft, fade presets, separate diagnostics and bounded report copy.
 - Embedded immutable source/build identity, vendor identity qualification invalidation.
-- Manual prepare/promote release separation, run-attempt asset naming, signing identity/closed handoff validation and hash-bound stable acceptance.
+- Manual prepare/promote release separation, run-attempt asset naming, signer continuity/closed handoff validation and hash-bound stable acceptance.
+- 25 Python script contract tests pass locally. The earlier CI head passed 25 debug JVM tests; lint identified literal flags in two loader calls, now replaced with the named PackageManager constant. Current-head complete CI remains the acceptance authority.
 
 External gates remain deliberately open: APK compile/lint on current-head CI; bootstrap infrastructure on master; signing secrets/certificate continuity; installed native read/probe/restore; context/source/HDR behaviour; lifecycle and cross-variant lease; persistence/fades; physical remote and playback/warmth matrix; exact stable-package acceptance. Update with actual run/asset evidence; never treat this ledger as a test result.
 
