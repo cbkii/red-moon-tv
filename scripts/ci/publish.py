@@ -95,6 +95,13 @@ def publish(directory, repo, expected_sha, state, tag):
         if not release['draft'] or marker not in (release.get('body') or ''):
             raise ValueError('Existing published/unmanaged release is immutable')
         if not testing and release['target_commitish'] != expected_sha: raise ValueError('Existing draft targets a different source')
+        if testing and release['tag_name'] != tag:
+            # Uploads resolve a release by tag. Repair identity before uploading any new group.
+            release = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH',
+                          dict(tag_name=tag, target_commitish=expected_sha, name=title,
+                               body=release.get('body') or marker, draft=True, prerelease=False, make_latest='false'))
+            if release['tag_name'] != tag or not release['draft']:
+                raise ValueError('Cannot recover permanent draft identity')
     else:
         # Never repoint an existing tag as a side effect of release creation.
         refs = api(f'repos/{repo}/git/matching-refs/tags/{tag}')

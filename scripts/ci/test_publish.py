@@ -101,3 +101,24 @@ class PublisherTests(unittest.TestCase):
                 writes = [c for c in remote.call_args_list if len(c.args)>1 and c.args[1]=='PATCH']
                 self.assertEqual(writes[0].args[2]['tag_name'], '000-testing-only')
                 self.assertEqual(writes[0].args[2]['target_commitish'], 'a'*40)
+
+    def test_placeholder_identity_is_repaired_before_new_asset_upload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); self.bundle(root)
+            release = dict(id=1, tag_name='untagged-placeholder', draft=True, body=MARKER, assets=[], html_url='https://github.com/cbkii/red-moon-tv/releases')
+            def api(path, method='GET', data=None):
+                if method == 'PATCH': release.update(data)
+                return release
+            def gh(*args, **kwargs):
+                if args[0] == 'api': return json.dumps([[release]])
+                self.assertEqual(args[:3], ('release', 'upload', '000-testing-only'))
+                self.assertEqual(release['tag_name'], '000-testing-only')
+                file = Path(args[3])
+                release['assets'].append(dict(id=len(release['assets'])+1, name=file.name,
+                    digest='sha256:'+hashlib.sha256(file.read_bytes()).hexdigest(),
+                    created_at='2026-10-30T00:00:00Z', browser_download_url='https://example.invalid/'+file.name))
+                return ''
+            with patch('publish.history', return_value=[]), patch('publish.gh', side_effect=gh), patch('publish.api', side_effect=api), contextlib.redirect_stdout(io.StringIO()):
+                publisher.publish(root, 'cbkii/red-moon-tv', 'a'*40, 'draft', '')
+                self.assertEqual(len(release['assets']), 4)
+                self.assertTrue(release['draft'])

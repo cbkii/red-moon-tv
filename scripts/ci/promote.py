@@ -93,7 +93,7 @@ def promote(repo, release_id, record, tools):
     if not current['draft'] or current['assets'] != assets:
         raise ValueError('Candidate changed during verification')
     notes = current['body'] + '\n\nPhysical acceptance (exact signed APK):\n```json\n' + json.dumps(record, indent=2) + '\n```\n'
-    final = api(f'repos/{repo}/releases/{release_id}', 'PATCH', dict(draft=False, prerelease=False, body=notes, make_latest='true'))
+    final = api(f'repos/{repo}/releases/{release_id}', 'PATCH', dict(tag_name=current['tag_name'], target_commitish=sha, name=current['name'], draft=False, prerelease=False, body=notes, make_latest='true'))
     if final['draft'] or final['prerelease'] or final['tag_name'] != current['tag_name']:
         raise ValueError('Promotion state verification failed')
     print(final['html_url'])
