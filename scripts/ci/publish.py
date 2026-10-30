@@ -144,12 +144,14 @@ def publish(directory, repo, expected_sha, state, tag):
             if {a['name'] for a in owned} != expected_names: continue
             for asset in owned: api(f'repos/{repo}/releases/assets/{asset["id"]}', 'DELETE')
         current = api(f'repos/{repo}/releases/{release["id"]}')
-        notes += '\nNewest two TESTING snapshots (owner access required while draft):\n\n'
+        notes += '\nNewest two TESTING snapshots (owner access required; download the named files from Assets below):\n\n'
         for metadata in sorted([a for a in current['assets'] if a['name'].startswith('BUILD_INFO-')], key=lambda a: a['created_at'], reverse=True):
             snapshot = metadata['name'][11:-5]
             if snapshot not in keep: continue
             asset = next(a for a in current['assets'] if a['name'] == f'red-moon-tv-TESTING-{snapshot}.apk')
-            notes += f'- [{snapshot}]({asset["browser_download_url"]}) · [metadata]({metadata["browser_download_url"]})\n'
+            # Draft browser URLs contain a temporary untagged ID which can change
+            # during the final PATCH. File names remain stable across that update.
+            notes += f'- {snapshot}: `{asset["name"]}` · `{metadata["name"]}`\n'
     else:
         notes += f'\nSource: {expected_sha}\n\nAPK SHA-256: {info["apk_sha256"]}\n'
     final = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH', dict(tag_name=tag, target_commitish=expected_sha, name=title, body=notes, draft=state == 'draft', prerelease=state == 'prerelease', make_latest='false'))
