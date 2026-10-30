@@ -41,6 +41,17 @@ def history(releases, repo):
             yield previous, prior
 
 
+def complete_testing_groups(assets):
+    names = {a['name'] for a in assets}
+    groups = []
+    for asset in assets:
+        if not re.fullmatch(r'BUILD_INFO-[0-9a-f]{12}-[0-9]+(?:-[0-9]+)?\.json', asset['name']): continue
+        key = asset['name'][11:-5]
+        required = {f'red-moon-tv-TESTING-{key}.apk', f'BUILD_INFO-{key}.json', f'SIGNER-{key}.txt', f'SHA256SUMS-{key}'}
+        if required <= names: groups.append(asset)
+    return sorted(groups, key=lambda a: a['created_at'], reverse=True)
+
+
 def publish(directory, repo, expected_sha, state, tag):
     if state != 'draft': raise ValueError('Only draft preparation is allowed; use promote.py after exact-artifact acceptance')
     files = sorted(directory.iterdir())
@@ -123,7 +134,7 @@ def publish(directory, repo, expected_sha, state, tag):
         if asset.get('digest') != 'sha256:' + hashlib.sha256(p.read_bytes()).hexdigest():
             raise ValueError('Remote asset digest does not match qualified bytes')
     if testing:
-        groups = sorted([a for a in current['assets'] if re.fullmatch(r'BUILD_INFO-[0-9a-f]{12}-[0-9]+(?:-[0-9]+)?\.json', a['name'])], key=lambda a: a['created_at'], reverse=True)
+        groups = complete_testing_groups(current['assets'])
         keep = {a['name'][11:-5] for a in groups[:2]}
         # Only remove this workflow's own older, complete snapshot groups.
         for old in groups[2:]:

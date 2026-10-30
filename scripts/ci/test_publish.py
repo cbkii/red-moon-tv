@@ -122,3 +122,13 @@ class PublisherTests(unittest.TestCase):
                 publisher.publish(root, 'cbkii/red-moon-tv', 'a'*40, 'draft', '')
                 self.assertEqual(len(release['assets']), 4)
                 self.assertTrue(release['draft'])
+
+    def test_partial_upload_does_not_displace_a_complete_retained_snapshot(self):
+        assets = []
+        for run in (1, 2, 3):
+            key = 'aaaaaaaaaaaa-'+str(run)+'-1'
+            names = [f'BUILD_INFO-{key}.json', f'red-moon-tv-TESTING-{key}.apk', f'SIGNER-{key}.txt', f'SHA256SUMS-{key}']
+            if run == 3: names = names[:1]  # Interrupted after metadata upload.
+            assets.extend(dict(name=name, created_at=f'2026-10-30T00:00:0{run}Z') for name in names)
+        retained = publisher.complete_testing_groups(assets)[:2]
+        self.assertEqual([x['name'] for x in retained], ['BUILD_INFO-aaaaaaaaaaaa-2-1.json','BUILD_INFO-aaaaaaaaaaaa-1-1.json'])
