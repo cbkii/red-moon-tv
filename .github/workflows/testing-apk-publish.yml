@@ -1,0 +1,57 @@
+name: Publish Testing APK Draft
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        type: string
+        required: true
+    secrets:
+      KEYSTORE_BASE64:
+        required: true
+      KEYSTORE_PASSWORD:
+        required: true
+      KEY_ALIAS:
+        required: true
+      KEY_PASSWORD:
+        required: true
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: testing-only-draft-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: red-moon-tv-testing-input
+          path: incoming
+      - name: Install signing tools
+        run: 'env JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;32.0.0"'
+      - name: Sign and verify the closed APK hand-off
+        env:
+          EXPECTED_SIGNER_SHA256: ${{ vars.EXPECTED_SIGNER_SHA256 }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: python3 scripts/ci/qualify.py --incoming incoming --output qualified --tools "$ANDROID_SDK_ROOT/build-tools/32.0.0" --expected-sha "$SOURCE_SHA"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: red-moon-tv-qualified-testing-${{ github.run_id }}-${{ github.run_attempt }}
+          path: qualified/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Refresh permanent owner-accessible TESTING draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: python3 scripts/ci/publish.py --directory qualified --expected-sha "$SOURCE_SHA"

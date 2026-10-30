@@ -1,0 +1,83 @@
+name: Refresh Testing APK Draft
+on:
+  workflow_dispatch:
+    inputs:
+      source_to_build:
+        description: 'PR number (#1 or 1), branch, tag or SHA; leave workflow selector on master'
+        type: string
+        default: master
+        required: true
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      requested: ${{ steps.source.outputs.requested }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/resolve_testing.py
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.requested == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: orchestrator
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '11'
+      - name: Install SDK inputs
+        run: 'env JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-32" "build-tools;32.0.0"'
+      - name: Build exact TESTING input without signing secrets
+        env:
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
+          cd source
+          ./gradlew --no-daemon --stacktrace -PVERSION_CODE=999999 -PVERSION_NAME=0.0.0-testing :app:testSnapshotUnitTest :app:lintSnapshot :app:assembleSnapshot
+          cd ..
+          mkdir testing-input
+          cp source/app/build/outputs/apk/snapshot/app-snapshot-unsigned.apk testing-input/app-unsigned.apk
+          python3 orchestrator/scripts/ci/envelope.py --sha "$SOURCE_SHA" --channel testing --version-code 999999 --version-name 0.0.0-testing --output testing-input/BUILD_INFO.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: red-moon-tv-testing-input
+          path: testing-input/
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: [resolve, build]
+    if: needs.resolve.outputs.requested == 'true'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/testing-apk-publish.yml
+    with:
+      source_sha: ${{ needs.resolve.outputs.source_sha }}
+    secrets:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
