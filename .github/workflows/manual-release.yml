@@ -12,15 +12,17 @@ on:
         type: string
         required: true
         default: '40'
-      release_state:
-        description: GitHub release state
+      operation:
+        description: Prepare a signed draft, or promote its unchanged accepted APK
         type: choice
-        options: [draft, prerelease, stable]
-        default: draft
-      a4_qualified:
-        description: 'The exact candidate passed physical A4 acceptance (required for stable)'
-        type: boolean
-        default: false
+        options: [prepare, promote]
+        default: prepare
+      release_id:
+        description: Existing managed draft ID (promote only)
+        type: string
+      acceptance_json:
+        description: Completed exact-APK acceptance JSON (promote only; see docs/A4-ACCEPTANCE.json)
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -28,6 +30,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    if: inputs.operation == 'prepare'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -43,17 +46,11 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           VERSION_NAME: ${{ inputs.version_name }}
           VERSION_CODE: ${{ inputs.version_code }}
-          RELEASE_STATE: ${{ inputs.release_state }}
-          A4_QUALIFIED: ${{ inputs.a4_qualified }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH"
           sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEFAULT_BRANCH" --jq .sha)"
           test "$sha" = "$GITHUB_SHA"
-          if [ "$RELEASE_STATE" = stable ] && [ "$A4_QUALIFIED" != true ]; then
-            echo 'Stable requires physical A4 qualification of this candidate.' >&2
-            exit 1
-          fi
           mkdir release-input
           python3 scripts/ci/envelope.py --sha "$sha" --channel release --version-name "$VERSION_NAME" --version-code "$VERSION_CODE" --output release-input/BUILD_INFO.json
           echo "source_sha=$sha" >> "$GITHUB_OUTPUT"
@@ -96,6 +93,7 @@ jobs:
         run: 'env JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;32.0.0"'
       - name: Sign and verify exact release
         env:
+          EXPECTED_SIGNER_SHA256: ${{ vars.EXPECTED_SIGNER_SHA256 }}
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -113,5 +111,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
           VERSION_NAME: ${{ inputs.version_name }}
-          RELEASE_STATE: ${{ inputs.release_state }}
-        run: python3 scripts/ci/publish.py --directory qualified --expected-sha "$SOURCE_SHA" --tag "v$VERSION_NAME" --state "$RELEASE_STATE"
+
+        run: python3 scripts/ci/publish.py --directory qualified --expected-sha "$SOURCE_SHA" --tag "v$VERSION_NAME" --state draft
+  promote:
+    if: inputs.operation == 'promote'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Promote exact accepted stable-package bytes (no build or signing)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          ACCEPTANCE_JSON: ${{ inputs.acceptance_json }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH"
+          python3 -c 'import os,pathlib; pathlib.Path("acceptance.json").write_text(os.environ["ACCEPTANCE_JSON"])'
+          python3 scripts/ci/promote.py --release-id "$RELEASE_ID" --acceptance acceptance.json

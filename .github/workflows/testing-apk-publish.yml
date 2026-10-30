@@ -37,6 +37,7 @@ jobs:
         run: 'env JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "build-tools;32.0.0"'
       - name: Sign and verify the closed APK hand-off
         env:
+          EXPECTED_SIGNER_SHA256: ${{ vars.EXPECTED_SIGNER_SHA256 }}
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}

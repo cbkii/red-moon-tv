@@ -1,51 +1,34 @@
-# Builds, TESTING and release publication
+# Red Moon TV build and release operations
 
-## Package identity
+Packages: stable `com.cbkii.redmoontv`, TESTING `.testing` (fixed 0.0.0-testing/999999), debug `.debug`. Every APK embeds full source SHA, build/run-attempt identity and backend protocol; diagnostics expose these. Never reuse a published stable versionCode. SDK 26 minimum / target 32 includes the API 28 A4, with 32-bit vendor compatibility still requiring physical tests.
 
-- Stable: `com.cbkii.redmoontv`, initially versionName `4.0.1-tv.1`, versionCode `40`.
-- TESTING: `com.cbkii.redmoontv.testing`, fixed versionName `0.0.0-testing`, versionCode `999999` in the requested testing workflow. This permits repeated installs with `adb install -r` without colliding with stable.
-- CI debug: `com.cbkii.redmoontv.debug`; uses the runner's debug key, so debug signing continuity across runs is not promised. Prefer the consistently signed TESTING channel for device updates.
+## Infrastructure bootstrap
 
-Android CI runs tests, lint and builds a debug diagnostic APK and an **unsigned** testing APK. The unsigned file is a signing input, not an installable TESTING release. The debug APK is installable but is not a physical A4 qualification result. CI artifacts bind to their run/attempt; source SHA is the run head.
+The reviewed infrastructure prerequisite must be on master before the dispatch workflows can be selected. It builds/signs a chosen application SHA without enabling native control on master. Keep application PR #1 separate until its physical gates are satisfied. Once infrastructure is merged, run **Refresh Testing APK Draft** from master and select `#1`, a same-repository branch, tag or full SHA. A trusted PR comment `/testing-apk` is optional. No pull_request_target commit-message trigger is used.
 
-## Signing secrets
+Build jobs check out immutable source without persisted credentials and receive no signing secrets. The signing job uses trusted workflow source and only a closed unsigned APK + BUILD_INFO handoff; it never executes scripts from the chosen app source. APK package/version/minimum SDK/launcher, native ABI and proprietary-JNI exclusion, alignment, signing certificate, checksums and remote digests are checked.
 
-The signing job uses the same names as the user's ts-theme/Auxio workflows:
+Secrets retain existing names: KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD. No new key is generated. Optionally pin `EXPECTED_SIGNER_SHA256` as a repository variable to the accepted certificate. If not yet pinned, metadata labels the certificate first-use; explicitly accept its exact digest in the stable physical acceptance record. Existing draft snapshots must retain signer continuity; compare against accepted prior builds before upgrading. Secret names alone do not prove availability.
 
-- `KEYSTORE_BASE64`
-- `KEYSTORE_PASSWORD`
-- `KEY_ALIAS`
-- `KEY_PASSWORD`
+The permanent owner-accessible draft is `000-testing-only`. Managed snapshot names include source prefix, run ID and attempt. Keep the newest two complete managed groups, preserving unrelated assets. Published/unmanaged releases, mismatched assets and conflicting tags are rejected. Download the complete group: APK, BUILD_INFO, SIGNER, SHA256SUMS.
 
-Secret values are never read into source, documentation or PR comments. Existing repository/organisation secrets must already grant this repository access; workflows cannot copy secrets from another repository. Source-build jobs never receive them. A separate signing job downloads only a closed two-file hand-off, inspects identity/version/minimum SDK and TV launcher metadata, aligns/signs/verifies the APK, records the signer and hashes, and publishes those exact verified bytes. Signing material exists only in a private temporary directory and is removed after use. Gradle never runs in that job.
+## Stable prepare and promote
 
-## Permanent TESTING draft
+Run **Manual Release** from current master:
 
-After these workflows are merged and Actions is enabled, run **Refresh Testing APK Draft** from the default branch. Choose a PR number (`1` or `#1`), branch, tag or SHA using `source_to_build`. Alternatively, a trusted collaborator can post `/testing-apk` in a PR, add `testing-apk`, or include `/testing-apk` as a separate command token in the latest PR commit message. Signed requests are restricted to same-repository source heads.
+1. `operation=prepare`: choose monotonically increasing versionCode/versionName. Tests/lint/build run without signing secrets; sign once and prepare a managed draft `v<versionName>`. Download the signed **stable-package** APK and metadata. This does not publish it.
+2. Physically qualify those bytes using A4-VALIDATION.md. Fill A4-ACCEPTANCE.json with package, source, signed APK hash, accepted signer, physical device/build, reviewer/date and passed evidence for every gate.
+3. `operation=promote`: enter that draft's numeric release ID and completed acceptance JSON. Promotion downloads/validates existing assets, remote hashes/checksums, source/tag, unchanged current master and physical record. It publishes those same bytes without rebuilding/re-signing. An obsolete or altered candidate is rejected.
 
-One owner-accessible draft is maintained:
+Promotion requires full acceptance, including qualified repeated-write fades and declared warmth/playback coverage. A useful diagnostic or backlight-only draft does not establish the complete product. There is no boolean bypass. A different stable UID may expose permissions not seen in TESTING.
 
-- Title: `000 Testing Only Version`
-- Tag name: `000-testing-only`
-- Managed marker: `<!-- red-moon-tv-testing-managed -->`
+The source commit and GPL notices are provided with the distribution metadata. Preserve the tag/commit as corresponding source and retain reproducible Gradle/JDK/SDK build information. Pause or Warmth Off is the first rollback; conditional restore/native TV Settings recovers picture levels. Android may refuse downgrades: prefer a forward-version release containing known-good code, rather than promising data-preserving rollback.
 
-Each snapshot contains an APK, BUILD_INFO JSON, SIGNER report and SHA256SUMS. Unique names include source SHA and build run ID. The newest two complete managed groups are retained. Unmanaged releases/assets are never overwritten. The workflow uses the trusted workflow snapshot for request resolution/signing/publication and an immutable requested source for the build. A draft is not a publicly downloadable prerelease.
-
-## Simple manual release
-
-Run **Manual Release** from current default-branch HEAD. Supply versionName, increasing stable versionCode and state (`draft`, `prerelease`, `stable`). The tag is exactly `v` + versionName. Default state is draft. Stable requires physical A4 acceptance of that candidate. Build input and qualified signed output are retained as separate workflow artifacts before publication.
-
-The publisher creates/uses a managed draft, uploads and verifies remote SHA-256 digests, then sets the requested state. It rejects published/unmanaged releases, conflicting existing tags or mismatched existing assets. A completed published release is immutable; a new version is the normal recovery path. Draft runs can be resumed with identical qualified bytes; an uncertain API write is reread before deciding what remains.
-
-No merge, tag/release creation or signing/publication workflow is automatically requested by implementation PR #1. Invoking the Engineering Orchestrator does not replace its immediate approval boundary for those operations. A human can explicitly authorise the prepared workflow once its source/build gate is established.
-
-## Validation commands
-
-Use JDK 11 with Gradle wrapper 7.2 and SDK platform/build-tools 32. SDK manager itself runs using the runner's JDK 17.
+## Checks
 
 ```sh
 python3 -m unittest discover -s scripts/ci -p 'test_*.py'
-./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleSnapshot
+./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:testSnapshotUnitTest :app:lintSnapshot :app:assembleSnapshot :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
 ```
 
-The local task environment can compile the reflection-only Java bridge and run Python contract tests. Full Android compilation requires the Android SDK/dependencies or a functioning GitHub Actions runner. Do not report a successful APK build from syntax checks alone.
+CI checks source/build behaviour only. Record workflow/run/attempt, source and workflow SHA, unsigned/signed hash, certificate and physical acceptance separately. Never publish stable from CI success alone.

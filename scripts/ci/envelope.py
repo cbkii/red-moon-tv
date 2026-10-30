@@ -29,11 +29,13 @@ def validate(info):
     return info
 
 
-def group(info, run_id):
+def group(info, run_id, attempt=1):
     validate(info)
     if not re.fullmatch(r'[1-9][0-9]*', str(run_id)):
         raise ValueError('Invalid run ID')
-    return info['source_sha'][:12] + '-' + str(run_id)
+    if not re.fullmatch(r'[1-9][0-9]*', str(attempt)):
+        raise ValueError('Invalid run attempt')
+    return info['source_sha'][:12] + '-' + str(run_id) + '-' + str(attempt)
 
 
 if __name__ == '__main__':

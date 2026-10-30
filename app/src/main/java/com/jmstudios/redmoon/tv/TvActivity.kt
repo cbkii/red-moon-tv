@@ -21,6 +21,8 @@ class TvActivity : Activity() {
     private lateinit var status: TextView
     private var building = false
     private var controlTag = 1
+    private var diagnostics = false
+    private var scheduleDraft: MutableList<PhaseSetting>? = null
     private val refresh = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) { refreshStatus() }
     }
@@ -33,7 +35,8 @@ class TvActivity : Activity() {
     override fun onStop() { unregisterReceiver(refresh); super.onStop() }
     override fun onResume() { super.onResume(); if (::status.isInitialized) refreshStatus() }
     private fun refreshStatus() {
-        val state = prefs.policy().at(Instant.now(), ZoneId.systemDefault())
+        val state = try { prefs.policy().at(Instant.now(), ZoneId.systemDefault()) }
+            catch (error: IllegalArgumentException) { status.text = "Invalid saved schedule: ${error.message}"; return }
         status.text = "${prefs.status}\n${prefs.warmthStatus}\nScheduled phase: ${state.current.phase.title} · next ${state.next.setting.phase.title} at ${time(state.next.setting.startMinute)} (${ZoneId.systemDefault()})"
     }
     private fun render() {
@@ -47,10 +50,22 @@ class TvActivity : Activity() {
         text("A4 native backlight · independent warmth", 18f)
         status = text("", 17f)
         refreshStatus()
-        button("Read native backlight (root)") { command("read") }.requestFocus()
+        button(if (diagnostics) "Close diagnostics" else "Diagnostics and native qualification") { diagnostics = !diagnostics; render() }
+        if (diagnostics) {
+        text("${com.jmstudios.redmoon.BuildConfig.APPLICATION_ID} · ${com.jmstudios.redmoon.BuildConfig.SOURCE_SHA.take(12)} · build ${com.jmstudios.redmoon.BuildConfig.BUILD_ID}", 16f)
+        button("Copy bounded diagnostic report") {
+            val clip = getSystemService(android.content.ClipboardManager::class.java)
+            clip.setPrimaryClip(ClipData.newPlainText("Red Moon TV diagnostics", DiagnosticsExporter.report(this)))
+            message("Diagnostic report copied. Vendor log collection is documented in A4-VALIDATION.md.")
+        }
+        button("Keep current native level and clear saved recovery") {
+            AlertDialog.Builder(this).setMessage("Clears the saved original and any uncertain write. Scheduling stays paused. Use only after checking the native TV Backlight setting.")
+                .setNegativeButton("Cancel", null).setPositiveButton("Keep") { _, _ -> command("keep") }.show()
+        }
+        button("Read native backlight (APK context)") { command("read") }.requestFocus()
         button("Test a nearby native level for 15 seconds, then restore") {
             AlertDialog.Builder(this).setTitle("Native backlight probe")
-                .setMessage("Tests a nearby five-point change using the TV API and attempts restoration after 15 seconds. Check the actual screen and native Backlight slider. Root permission is needed. If interrupted, restore in TV Settings. The test does not qualify fades or input switching.")
+                .setMessage("Tests a nearby five-point change using the TV API and attempts restoration after 15 seconds. Check the actual screen and native Backlight slider. Uses the installed vendor API from the APK. Root is not requested. If interrupted, restore in TV Settings. The test does not qualify fades or input switching.")
                 .setNegativeButton("Cancel", null).setPositiveButton("Test") { _, _ -> command("probe") }.show()
         }
         button("Revert current preview") { command("revert") }
@@ -64,20 +79,33 @@ class TvActivity : Activity() {
             if (checked && !prefs.nativeQualified) { message("Verify native control first. Repeated-write persistence must be separately established."); render() }
             else prefs.fadesQualified = checked
         }
+        }
         text("Backlight schedule", 23f)
         toggle("Enable backlight schedule", prefs.backlightEnabled) { checked ->
             if (checked && !prefs.nativeQualified) { message("The backlight probe must be physically verified first."); render() }
             else { prefs.backlightEnabled = checked; command(if (checked) "resume" else "pause") }
         }
-        prefs.policy().settings.forEach { setting ->
-            text("${setting.phase.title} · ${time(setting.startMinute)}–${time(prefs.policy().settings[(setting.phase.ordinal + 1) % 3].startMinute)}", 20f)
+        if (scheduleDraft == null) button("Edit Day / Dusk / Dim schedule") { scheduleDraft = prefs.policy().settings.toMutableList(); render() }
+        scheduleDraft?.toList()?.forEach { setting ->
+            text("${setting.phase.title} · draft ${time(setting.startMinute)}", 20f)
             button("${if (setting.phase == Phase.DAY) "Maximum" else "Minimum"} and target: ${setting.level}%") {
-                number("${setting.phase.title} level", setting.level, setting.phase.minimum, setting.phase.maximum) { replace(setting.copy(level = it)) }
+                number("${setting.phase.title} level", setting.level, setting.phase.minimum, setting.phase.maximum) { editDraft(setting.copy(level = it)) }
             }
-            button("Starts: ${time(setting.startMinute)}") { clock(setting.startMinute) { replace(setting.copy(startMinute = it)) } }
-            button("Incoming fade: ${setting.fadeSeconds} seconds${if (!prefs.fadesQualified) " (unavailable until qualified)" else ""}") {
-                number("Incoming fade · 0 is immediate", setting.fadeSeconds, 0, 888) { replace(setting.copy(fadeSeconds = it)) }
+            button("Starts: ${time(setting.startMinute)}") { clock(setting.startMinute) { editDraft(setting.copy(startMinute = it)) } }
+            button("Incoming fade: ${setting.fadeSeconds} seconds") {
+                val presets = arrayOf("0", "5", "15", "30", "60", "120", "300", "600", "888", "Custom")
+                AlertDialog.Builder(this).setTitle("Incoming fade in seconds").setItems(presets) { _, which ->
+                    if (which == 9) number("Incoming fade", setting.fadeSeconds, 0, 888) { editDraft(setting.copy(fadeSeconds = it)) }
+                    else editDraft(setting.copy(fadeSeconds = presets[which].toInt()))
+                }.show()
             }
+        }
+        if (scheduleDraft != null) {
+            button("Save all three phases") {
+                try { prefs.save(BrightnessPolicy(scheduleDraft!!.toList())); scheduleDraft = null; command(); render() }
+                catch (error: IllegalArgumentException) { message(error.message ?: "Invalid schedule") }
+            }
+            button("Cancel schedule edits") { scheduleDraft = null; render() }
         }
         text("Phase limits apply immediately; fades continue within them. For example, 90 → Dusk 40 steps to 80 before fading. Native percentages are slider positions, not measured light output.", 16f)
         text("Temporary phase · automatic schedule resumes at the next boundary", 17f)
@@ -108,7 +136,7 @@ class TvActivity : Activity() {
             }}
         }
         val colour = prefs.store.getInt("warmth-colour", 40)
-        button("Warmth colour: ${500 + colour * 30} K") { number("Warmth colour · 500–3500 K", colour, 0, 100, { "${500 + it * 30} K" }) {
+        button("Approximate warmth colour: ${500 + colour * 30} K") { number("Warmth colour · 500–3500 K", colour, 0, 100, { "${500 + it * 30} K" }) {
             prefs.store.edit().putInt("warmth-colour", it).apply(); command("warmth"); render()
         }}
         button("Warmth fade: ${prefs.warmthFade} seconds") { number("Warmth fade", prefs.warmthFade, 0, 888) { prefs.warmthFade = it; command("warmth"); render() } }
@@ -160,9 +188,9 @@ class TvActivity : Activity() {
             .setPositiveButton("Save") { _, _ -> save(hour.value * 60 + minute.value) }.show()
         hour.requestFocus()
     }
-    private fun replace(setting: PhaseSetting) {
-        try { prefs.save(BrightnessPolicy(prefs.policy().settings.map { if (it.phase == setting.phase) setting else it })); command(); render() }
-        catch (e: IllegalArgumentException) { message(e.message ?: "Invalid configuration") }
+    private fun editDraft(setting: PhaseSetting) {
+        scheduleDraft = scheduleDraft?.map { if (it.phase == setting.phase) setting else it }?.toMutableList()
+        render()
     }
     private fun command(name: String = "reconcile", phase: Phase? = null) {
         if (name in listOf("pause", "restore")) prefs.backlightEnabled = false

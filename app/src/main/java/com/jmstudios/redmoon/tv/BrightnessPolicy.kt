@@ -49,6 +49,18 @@ class BrightnessFade(policy: BrightnessPolicy, val setting: PhaseSetting, curren
     private val allowed = policy.band(setting)
     init { require(current in 0..100 && requestedDurationMillis in 0..888000) }
     val durationMillis = if (start == setting.level) 0L else requestedDurationMillis
+    /** Next changed integer, capped at two writes/second; no duplicate 500 ms polling. */
+    fun nextDelay(elapsedMillis: Long): Long {
+        if (elapsedMillis >= durationMillis) return 500L
+        val current = valueAt(elapsedMillis)
+        var low = elapsedMillis + 1
+        var high = durationMillis
+        while (low < high) {
+            val middle = (low + high) / 2
+            if (valueAt(middle) == current) low = middle + 1 else high = middle
+        }
+        return maxOf(500L, low - elapsedMillis)
+    }
     fun valueAt(elapsedMillis: Long): Int {
         val fraction = if (durationMillis == 0L) 1.0 else (elapsedMillis.toDouble() / durationMillis).coerceIn(0.0, 1.0)
         return (start + (setting.level - start) * fraction).roundToInt().coerceIn(allowed)

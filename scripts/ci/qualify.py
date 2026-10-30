@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import zipfile
 from envelope import validate, group
 
 
@@ -35,8 +36,17 @@ def qualify(incoming, destination, tools, expected_sha, run_id):
     manifest = run([tools / 'aapt', 'dump', 'xmltree', incoming / 'app-unsigned.apk', 'AndroidManifest.xml'])
     if 'android.intent.category.LEANBACK_LAUNCHER' not in manifest:
         raise ValueError('Missing TV launcher entry')
+    for item in incoming.iterdir():
+        if item.is_symlink() or not item.is_file(): raise ValueError('Non-regular hand-off file')
+    with zipfile.ZipFile(incoming / 'app-unsigned.apk') as archive:
+        for member in archive.namelist():
+            if member.startswith('/') or '..' in Path(member).parts: raise ValueError('Unsafe APK member')
+            if member.startswith('lib/') and not member.startswith('lib/armeabi-v7a/'):
+                raise ValueError('Unexpected native ABI')
+            if member.endswith('libcom_mediatek_twoworlds_tv_jni.so'):
+                raise ValueError('Proprietary vendor JNI must not be redistributed')
     destination.mkdir(parents=True, exist_ok=False)
-    suffix = group(info, run_id) if info['channel'] == 'testing' else info['version_name']
+    suffix = group(info, run_id, os.environ.get('GITHUB_RUN_ATTEMPT', '1')) if info['channel'] == 'testing' else info['version_name']
     prefix = 'TESTING-' if info['channel'] == 'testing' else ''
     apk = destination / f'red-moon-tv-{prefix}{suffix}.apk'
     with tempfile.TemporaryDirectory(prefix='red-moon-signing-') as temp:
@@ -52,6 +62,17 @@ def qualify(incoming, destination, tools, expected_sha, run_id):
         raise ValueError('Missing verified signing certificate')
     check_badging(run([tools / 'aapt', 'dump', 'badging', apk]), info)
     run([tools / 'zipalign', '-c', '4', apk])
+    certificate = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})', signer)
+    if not certificate: raise ValueError('Missing signer identity')
+    expected_signer = os.environ.get('EXPECTED_SIGNER_SHA256', '').lower()
+    if expected_signer and not re.fullmatch(r'[0-9a-f]{64}', expected_signer): raise ValueError('Invalid expected signer digest')
+    if expected_signer and certificate.group(1).lower() != expected_signer: raise ValueError('Signing certificate continuity mismatch')
+    info['signer_sha256'] = certificate.group(1).lower()
+    info['certificate_continuity'] = 'pinned' if expected_signer else 'first-use: explicitly accept this certificate before promotion'
+    info['unsigned_apk_sha256'] = hashlib.sha256((incoming / 'app-unsigned.apk').read_bytes()).hexdigest()
+    info['workflow_sha'] = os.environ['GITHUB_WORKFLOW_SHA']
+    info['build_run_attempt'] = os.environ.get('GITHUB_RUN_ATTEMPT', '1')
+    info['backend_protocol'] = 'apk-jni-v2'
     info['build_run_id'] = str(run_id)
     info['apk_sha256'] = hashlib.sha256(apk.read_bytes()).hexdigest()
     info['physical_a4_validation'] = 'not established by CI'

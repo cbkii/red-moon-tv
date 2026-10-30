@@ -7,8 +7,6 @@ on:
         type: string
         default: master
         required: true
-  pull_request_target:
-    types: [opened, synchronize, labeled]
   issue_comment:
     types: [created]
 permissions:

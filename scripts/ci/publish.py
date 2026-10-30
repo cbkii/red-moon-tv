@@ -26,6 +26,7 @@ def api(path, method='GET', data=None):
 
 
 def publish(directory, repo, expected_sha, state, tag):
+    if state != 'draft': raise ValueError('Only draft preparation is allowed; use promote.py after exact-artifact acceptance')
     files = sorted(directory.iterdir())
     infos = [p for p in files if p.name.startswith('BUILD_INFO-') and p.suffix == '.json']
     if len(infos) != 1 or any(not p.is_file() or p.is_symlink() for p in files):
@@ -83,7 +84,7 @@ def publish(directory, repo, expected_sha, state, tag):
         if asset.get('digest') != 'sha256:' + hashlib.sha256(p.read_bytes()).hexdigest():
             raise ValueError('Remote asset digest does not match qualified bytes')
     if testing:
-        groups = sorted([a for a in current['assets'] if re.fullmatch(r'BUILD_INFO-[0-9a-f]{12}-[0-9]+\.json', a['name'])], key=lambda a: a['created_at'], reverse=True)
+        groups = sorted([a for a in current['assets'] if re.fullmatch(r'BUILD_INFO-[0-9a-f]{12}-[0-9]+(?:-[0-9]+)?\.json', a['name'])], key=lambda a: a['created_at'], reverse=True)
         keep = {a['name'][11:-5] for a in groups[:2]}
         # Only remove this workflow's own older, complete snapshot groups.
         for old in groups[2:]:
@@ -110,7 +111,7 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('--directory', type=Path, required=True)
     p.add_argument('--expected-sha', required=True)
-    p.add_argument('--state', choices=('draft', 'prerelease', 'stable'), default='draft')
+    p.add_argument('--state', choices=('draft',), default='draft')
     p.add_argument('--tag', default='000-testing-only')
     a = p.parse_args()
     publish(a.directory, os.environ['GITHUB_REPOSITORY'], a.expected_sha, a.state, a.tag)

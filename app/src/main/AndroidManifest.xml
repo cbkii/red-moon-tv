@@ -67,6 +67,8 @@
         android:supportsRtl="true"
         android:theme="@style/LaunchScreenTheme">
 
+        <uses-native-library android:name="libcom_mediatek_twoworlds_tv_jni.so" android:required="false" />
+
         <activity
             android:name="com.jmstudios.redmoon.Intro"
             android:label="@string/activity_intro"
@@ -179,6 +181,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service android:name=".tv.A4NativeService" android:process=":backlight" android:exported="false" />
         <service android:name=".tv.TvDisplayService" android:exported="false" />
         <receiver android:name=".tv.TvReceiver" android:exported="false">
             <intent-filter>

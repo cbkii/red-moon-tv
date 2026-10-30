@@ -25,14 +25,6 @@ def resolve(event, name, repo, branch):
             return None
         if not re.search(r'(^|\s)/testing-apk(\s|$)', comment['body']): return None
         number = event['issue']['number']
-    elif name == 'pull_request_target':
-        pr = event['pull_request']
-        if event['action'] == 'labeled':
-            if event['label']['name'] != 'testing-apk': return None
-        else:
-            commit = api(f'repos/{repo}/commits/{pr["head"]["sha"]}')
-            if not re.search(r'(^|\s)/testing-apk(\s|$)', commit['commit']['message']): return None
-        number = pr['number']
     else:
         return None
     if number is not None:

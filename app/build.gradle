@@ -25,6 +25,15 @@ if(rootProject.file("keystore.properties").exists()) {
    }
 }
 
+def sourceSha = (project.findProperty('SOURCE_SHA') ?: System.getenv('SOURCE_SHA') ?: '').toString()
+if (!sourceSha) {
+    def output = new ByteArrayOutputStream()
+    exec { commandLine 'git', 'rev-parse', 'HEAD'; standardOutput = output }
+    sourceSha = output.toString().trim()
+}
+if (!(sourceSha ==~ /[0-9a-f]{40}/)) throw new GradleException('SOURCE_SHA must be a full immutable commit')
+def buildIdentity = (System.getenv('GITHUB_RUN_ID') ?: 'local') + '-' + (System.getenv('GITHUB_RUN_ATTEMPT') ?: '1')
+
 android {
     compileSdkVersion 32
 
@@ -35,6 +44,9 @@ android {
         versionCode = (project.findProperty('VERSION_CODE') ?: '40').toString().toInteger()
         versionName = (project.findProperty('VERSION_NAME') ?: '4.0.1-tv.1').toString()
         manifestPlaceholders = [appLabel: 'Red Moon TV']
+        buildConfigField 'String', 'SOURCE_SHA', '"' + sourceSha + '"'
+        buildConfigField 'String', 'BUILD_ID', '"' + buildIdentity + '"'
+        buildConfigField 'String', 'BACKEND_PROTOCOL', '"apk-jni-v2"'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

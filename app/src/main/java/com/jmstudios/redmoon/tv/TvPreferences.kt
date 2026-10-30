@@ -2,6 +2,9 @@
 package com.jmstudios.redmoon.tv
 
 import android.content.Context
+import com.jmstudios.redmoon.BuildConfig
+import java.io.File
+import java.security.MessageDigest
 
 class TvPreferences(private val context: Context) {
     val store = context.getSharedPreferences("tv-display-v1", Context.MODE_PRIVATE)
@@ -9,7 +12,28 @@ class TvPreferences(private val context: Context) {
         get() = store.getBoolean("backlight", false)
         set(value) { store.edit().putBoolean("backlight", value).apply() }
     val signature: String
-        get() = android.os.Build.FINGERPRINT + ":" + context.packageManager.getPackageInfo("com.android.tv.settings", 0).lastUpdateTime
+        get() = identity ?: synchronized(TvPreferences::class.java) {
+            identity ?: run {
+                val binding = try {
+                    val info = context.packageManager.getApplicationInfo("com.android.tv.settings", 1024)
+                    (listOf(info.sourceDir) + (info.sharedLibraryFiles?.toList() ?: emptyList())).joinToString(":") { digest(File(it)) }
+                } catch (_: Exception) { "binding-unavailable" }
+                (android.os.Build.FINGERPRINT + ":" + BuildConfig.BACKEND_PROTOCOL + ":" + BuildConfig.SOURCE_SHA +
+                    ":" + BuildConfig.BUILD_ID + ":" + binding + ":" + digest(File("/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so")))
+                    .also { identity = it }
+            }
+        }
+    companion object {
+        @Volatile private var identity: String? = null
+        fun invalidateIdentity() { identity = null }
+        private fun digest(file: File): String = try {
+            val hash = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input -> val bytes = ByteArray(32768); while (true) {
+                val count = input.read(bytes); if (count < 0) break; hash.update(bytes, 0, count)
+            } }
+            hash.digest().joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) { "unreadable:${file.name}" }
+    }
     val probeComplete: Boolean
         get() = store.getBoolean("probe-restored", false) && store.getString("probe-signature", "") == signature
     var nativeQualified: Boolean

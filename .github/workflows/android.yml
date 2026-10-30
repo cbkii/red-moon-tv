@@ -28,7 +28,7 @@ jobs:
       - name: Test, lint and build TV APKs
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleSnapshot 2>&1 | tee gradle-build.log
+          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:testSnapshotUnitTest :app:lintSnapshot :app:assembleSnapshot :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease 2>&1 | tee gradle-build.log
       - name: Preserve installable diagnostic APK and test reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

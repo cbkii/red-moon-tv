@@ -1,67 +1,86 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 package com.jmstudios.redmoon.tv
 
-import android.content.Context
-import java.io.ByteArrayOutputStream
+import android.content.*
+import android.os.*
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
 
-interface BacklightBackend {
-    fun context(): String? = null
-    fun read(): Int
-    fun claim()
-    fun write(value: Int)
-    fun release()
-}
-
-/** Every call is bounded. No staging files or generic Android brightness fallback. */
-class A4BacklightBackend(private val context: Context) : BacklightBackend {
+/** APK-UID client. JNI runs in a private, disposable app process, never in su/app_process. */
+class A4BacklightBackend(context: Context) : BacklightBackend {
+    private val app = context.applicationContext
+    private val main = Handler(Looper.getMainLooper())
+    @Volatile private var messenger: Messenger? = null
+    private var connection: ServiceConnection? = null
+    private var workerPid = -1
     private var nativeContext: String? = null
+    private var sequence = 0
     override fun context(): String? = nativeContext
-    private fun quote(s: String) = "'" + s.replace("'", "'\\''") + "'"
-    private fun execute(vararg args: String): Map<String, String> {
-        val tvApk = context.packageManager.getApplicationInfo("com.android.tv.settings", 0).sourceDir
-        val classpath = context.applicationInfo.sourceDir + ":" + tvApk
-        val command = "CLASSPATH=${quote(classpath)} /system/bin/app_process /system/bin com.jmstudios.redmoon.tv.A4NativeBridge " + args.joinToString(" ") { quote(it) }
-        val process = ProcessBuilder("su", "-c", command).redirectErrorStream(true).start()
-        val bytes = ByteArrayOutputStream()
-        val reader = thread(isDaemon = true, name = "a4-native-output") {
-            process.inputStream.use { input ->
-                val buffer = ByteArray(1024)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    synchronized(bytes) { if (bytes.size() < 32768) bytes.write(buffer, 0, minOf(count, 32768 - bytes.size())) }
-                }
-            }
+
+    private fun connect() {
+        if (messenger != null) return
+        check(Looper.myLooper() != Looper.getMainLooper()) { "Native calls require the controller worker" }
+        val ready = CountDownLatch(1)
+        val link = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, binder: IBinder) { messenger = Messenger(binder); ready.countDown() }
+            override fun onServiceDisconnected(name: ComponentName) { messenger = null }
+            override fun onNullBinding(name: ComponentName) { ready.countDown() }
+        }
+        connection = link
+        main.post { if (!app.bindService(Intent(app, A4NativeService::class.java), link, Context.BIND_AUTO_CREATE)) ready.countDown() }
+        if (!ready.await(5, TimeUnit.SECONDS) || messenger == null) { close(); error("Native worker unavailable (bind timeout)") }
+    }
+
+    @Synchronized private fun call(operation: String, value: Int? = null): Bundle {
+        connect()
+        if (workerPid < 0 && operation != "hello") call("hello")
+        val done = CountDownLatch(1)
+        var answer: Bundle? = null
+        val id = ++sequence
+        val reply = Messenger(Handler(Looper.getMainLooper()) { msg ->
+            if (msg.arg1 == id) { answer = msg.data; done.countDown() }
+            true
+        })
+        val request = Message.obtain(null, 1).apply {
+            arg1 = id; replyTo = reply
+            data = Bundle().apply { putString("operation", operation); if (value != null) putInt("value", value) }
         }
         try {
-            check(process.waitFor(12, TimeUnit.SECONDS)) { "Native command timed out; outcome unknown. Read back before retrying." }
-            reader.join(1000)
-            val output = synchronized(bytes) { bytes.toString("UTF-8") }
-            val fields = output.lineSequence().filter { it.startsWith("RM_") && '=' in it }
-                .associate { it.substringBefore('=') to it.substringAfter('=').trim() }
-            check(process.exitValue() == 0 && "RM_ERROR" !in fields) { fields["RM_ERROR"] ?: "Native helper failed (${process.exitValue()}): ${output.takeLast(1200)}" }
-            return fields
-        } finally {
-            process.destroy()
-            if (process.isAlive) process.destroyForcibly()
+            messenger!!.send(request)
+            if (!done.await(6, TimeUnit.SECONDS)) {
+                // Interrupting Java cannot cancel JNI/Binder. Terminate only our identified worker;
+                // a vendor-side setter may nevertheless have completed. The journal remains pending.
+                if (workerPid > 0) Process.killProcess(workerPid)
+                close()
+                error("Native $operation timed out; outcome unknown. Reconcile readback before writing again")
+            }
+            val result = answer ?: error("Missing native response")
+            workerPid = result.getInt("pid", -1)
+            check(!result.containsKey("error")) { result.getString("error") ?: "Native failure" }
+            return result
+        } catch (error: RemoteException) {
+            close()
+            throw IllegalStateException("Native worker died; outcome unknown. Read before retrying", error)
         }
     }
     override fun read(): Int {
-        val fields = execute("get")
-        val value = fields["RM_BEFORE"]?.toIntOrNull()
-        check(value != null && value in 0..100) { "No valid native readback" }
-        check(fields["RM_MIN"]?.toIntOrNull() == 0 && fields["RM_MAX"]?.toIntOrNull() == 100) { "Unsupported native range: $fields" }
-        nativeContext = fields["RM_CONTEXT"]
-        check(!nativeContext.isNullOrBlank()) { "Missing native picture/boot context" }
-        return value
+        val result = call("read")
+        nativeContext = result.getString("context")
+        check(!nativeContext.isNullOrBlank()) { "Missing native context" }
+        check(result.getInt("minimum", -1) == 0 && result.getInt("maximum", -1) == 100) { "Unsupported native range" }
+        val level = result.getInt("level", -1)
+        check(level in 0..100) { "Invalid native readback" }
+        app.getSharedPreferences("tv-display-v1", Context.MODE_PRIVATE).edit()
+            .putString("native-diagnostics", result.getString("diagnostics", ""))
+            .putInt("confirmed-native", level).apply()
+        return level
     }
-    override fun claim() { check(execute("claim", context.packageName)["RM_CLAIMED"] == "1") }
-    override fun write(value: Int) {
-        require(value in 0..100)
-        val fields = execute("set", context.packageName, value.toString())
-        check(fields["RM_RESULT"] == "0" && fields["RM_AFTER"]?.toIntOrNull() == value) { "Unverified native write" }
+    override fun claim() { call("claim") }
+    override fun write(value: Int) { require(value in 0..100); call("write", value) }
+    override fun release() { if (messenger != null) call("release") }
+    override fun close() {
+        val link = connection
+        connection = null; messenger = null; workerPid = -1
+        if (link != null) main.post { try { app.unbindService(link) } catch (_: IllegalArgumentException) {} }
     }
-    override fun release() { check(execute("release", context.packageName)["RM_RELEASED"] == "1") }
 }
