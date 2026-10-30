@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 package com.jmstudios.redmoon.tv
 
-enum class TvSetupStep { RECOVERY, CHECKING, CONNECT, READING, FAILED, READ_ONLY, PROBE, CONFIRM, READY }
+enum class TvSetupStep { PROBING, RECOVERY, CHECKING, CONNECT, READING, FAILED, READ_ONLY, PROBE, CONFIRM, READY }
 
 /** UI setup is a view of actual read/probe state; opening a page never qualifies hardware. */
 fun tvSetupStep(identityReady: Boolean, recovery: Boolean, readState: String, level: Int?,
-                writeContext: Boolean, probeRestored: Boolean, qualified: Boolean): TvSetupStep = when {
+                writeContext: Boolean, probeRestored: Boolean, qualified: Boolean, probeActive: Boolean = false): TvSetupStep = when {
+    probeActive -> TvSetupStep.PROBING
     recovery -> TvSetupStep.RECOVERY
     !identityReady -> TvSetupStep.CHECKING
     readState == "reading" -> TvSetupStep.READING

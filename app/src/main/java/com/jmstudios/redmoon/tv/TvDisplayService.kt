@@ -65,6 +65,7 @@ class TvDisplayService : Service() {
     }
     override fun onCreate() {
         super.onCreate()
+        active = true
         prefs = TvPreferences(this)
         prefs.prepareIdentity { if (!destroyed) reconcile(false) }
         controller = newController()
@@ -350,6 +351,7 @@ class TvDisplayService : Service() {
         }
     }
     override fun onDestroy() {
+        active = false
         destroyed = true; cancelTransition()
         main.removeCallbacksAndMessages(null); clearWarmth(); unregisterReceiver(screens)
         // Let a bounded in-flight call settle before releasing its worker and lease.
@@ -363,6 +365,8 @@ class TvDisplayService : Service() {
         writer.println("pending_native=${pendingNative.get()}; queue=${worker.queue.size}; screen_on=$screenOn; preview=$preview")
     }
     companion object {
+        @Volatile var active: Boolean = false
+            private set
         private const val CHANNEL = "tv-display"
         const val STATUS = "com.cbkii.redmoontv.STATUS"
         const val BOUNDARY = "com.cbkii.redmoontv.BOUNDARY"

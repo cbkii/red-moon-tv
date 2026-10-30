@@ -70,12 +70,13 @@ class TvActivity : Activity() {
     override fun onBackPressed() { if (page != Page.HOME) open(Page.HOME) else super.onBackPressed() }
     private fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
     private fun setup() = tvSetupStep(prefs.identityReady, RecoveryJournal.exists(this), prefs.readState,
-        prefs.nativeLevel, prefs.writeContextReady, prefs.probeComplete, prefs.nativeQualified)
+        prefs.nativeLevel, prefs.writeContextReady, prefs.probeComplete, prefs.nativeQualified,
+        TvDisplayService.active && prefs.store.getBoolean("probe-active", false))
     private fun stateKey() = listOf(setup(), prefs.rootBackend, prefs.backlightEnabled, prefs.warmthEnabled,
         prefs.probeComplete, prefs.nativeQualified, prefs.store.getBoolean("probe-active", false)).joinToString(":")
     private fun policy() = try { prefs.policy() } catch (_: IllegalArgumentException) { BrightnessPolicy.defaults() }
-    private fun summary(): String = if (prefs.store.getBoolean("probe-active", false) && !RecoveryJournal.exists(this))
-        prefs.status.substringBefore('\n') else when (setup()) {
+    private fun summary(): String = when (setup()) {
+        TvSetupStep.PROBING -> prefs.status.substringBefore('\n')
         TvSetupStep.CHECKING -> "Checking installed TV bindings…"
         TvSetupStep.CONNECT -> "Connect backlight to read the TV's native level. Warmth works independently."
         TvSetupStep.READING -> if (prefs.rootBackend) "Connecting with root… allow Magisk on the TV if prompted." else "Reading the TV backlight…"
@@ -115,7 +116,7 @@ class TvActivity : Activity() {
         scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false; isVerticalScrollBarEnabled = false }
         root.addView(scroll, LinearLayout.LayoutParams(0, -1, 1f))
         rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(6), dp(4), dp(6), dp(16)) }
-        scroll.addView(rows, ScrollView.LayoutParams(-1, -2))
+        scroll.addView(rows, FrameLayout.LayoutParams(-1, -2))
         text(page.title, 30, bold = true)
         statusView = text(summary(), 17, muted).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         when (page) {
@@ -142,10 +143,11 @@ class TvActivity : Activity() {
         hero.addView(detail, LinearLayout.LayoutParams(0, -2, 1f))
         detail.addView(label("Last confirmed backlight", 18, ink))
         detail.addView(label(if (prefs.rootBackend) "Root connection" else "APK connection", 15, muted))
-        val activeProbe = prefs.store.getBoolean("probe-active", false)
+        val activeProbe = setup() == TvSetupStep.PROBING
         if (activeProbe) {
             actions(listOf("Test running…" to {}, "Restore now" to { command("revert") })).first().isEnabled = false
         } else when (setup()) {
+            TvSetupStep.PROBING -> Unit // Handled above while the live service owns the preview.
             TvSetupStep.CHECKING, TvSetupStep.READING -> button(if (setup() == TvSetupStep.READING) "Reading backlight…" else "Checking TV…", "home-wait") {}.isEnabled = false
             TvSetupStep.CONNECT -> button("Connect backlight", "home-connect") { command("read") }
             TvSetupStep.FAILED, TvSetupStep.READ_ONLY -> actions(listOf("Read again" to { command("read") },
@@ -156,6 +158,7 @@ class TvActivity : Activity() {
             TvSetupStep.READY -> actions(listOf((if (prefs.backlightEnabled) "Pause backlight" else "Resume schedule") to {
                 command(if (prefs.backlightEnabled) "pause" else "resume") }, "Read again" to { command("read") }))
         }
+        if (prefs.backlightEnabled && setup() != TvSetupStep.READY) button("Pause native schedule", "home-pause") { command("pause") }
         val p = policy()
         val group = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         rows.addView(group, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
@@ -170,7 +173,7 @@ class TvActivity : Activity() {
         text("Phase buttons hold until the next scheduled boundary. Warmth remains independent.", 14, muted)
     }
     private fun schedule() {
-        toggle("Backlight schedule", prefs.backlightEnabled, "schedule-enable", setup() == TvSetupStep.READY) {
+        toggle("Backlight schedule", prefs.backlightEnabled, "schedule-enable", prefs.backlightEnabled || setup() == TvSetupStep.READY) {
             command(if (it) "resume" else "pause")
         }
         if (setup() != TvSetupStep.READY) button("Finish connection setup on Home", "schedule-setup") { open(Page.HOME) }

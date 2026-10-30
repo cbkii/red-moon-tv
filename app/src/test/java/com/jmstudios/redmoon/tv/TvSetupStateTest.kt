@@ -5,6 +5,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TvSetupStateTest {
+    @Test fun liveProbeJournalIsExpectedButBecomesRecoveryAfterServiceLoss() {
+        assertEquals(TvSetupStep.PROBING, tvSetupStep(true, true, "ready", 61, true, false, false, true))
+        assertEquals(TvSetupStep.RECOVERY, tvSetupStep(true, true, "ready", 61, true, false, false, false))
+    }
     @Test fun recoveryAlwaysWinsOverOldSuccess() {
         assertEquals(TvSetupStep.RECOVERY, tvSetupStep(true, true, "ready", 66, true, true, true))
     }
