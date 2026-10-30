@@ -67,6 +67,10 @@ class TvDisplayService : Service() {
         super.onCreate()
         active = true
         prefs = TvPreferences(this)
+        // A previous process may have died during a read. A new lifecycle owner
+        // must not advertise that old in-flight operation, including boot for warmth.
+        if (prefs.store.getString("native-read-state", "") == "reading")
+            prefs.store.edit().remove("native-read-state").apply()
         prefs.prepareIdentity { if (!destroyed) reconcile(false) }
         controller = newController()
         recoveryRequired = RecoveryJournal.exists(this)
@@ -355,8 +359,7 @@ class TvDisplayService : Service() {
         destroyed = true; cancelTransition()
         main.removeCallbacksAndMessages(null); clearWarmth(); unregisterReceiver(screens)
         // Let a bounded in-flight call settle before releasing its worker and lease.
-        worker.execute { controller.close() }
-        worker.shutdown()
+        closeControllerExecutor(worker) { controller.close() }
         super.onDestroy()
     }
     override fun onBind(intent: Intent?) = null

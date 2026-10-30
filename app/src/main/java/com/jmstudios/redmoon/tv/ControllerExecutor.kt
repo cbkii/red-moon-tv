@@ -8,3 +8,10 @@ internal fun controllerExecutor() = ScheduledThreadPoolExecutor(1).apply {
     setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
     setContinueExistingPeriodicTasksAfterShutdownPolicy(false)
 }
+
+/** Android can cancel even zero-delay queued tasks at shutdown; close on the worker first. */
+internal fun closeControllerExecutor(executor: ScheduledThreadPoolExecutor, close: () -> Unit) {
+    executor.execute {
+        try { close() } finally { executor.shutdown() }
+    }
+}

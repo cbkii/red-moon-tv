@@ -10,6 +10,7 @@ Inputs: `a4-results.zip` and `a4-read-20261030T221954226795Z.zip`. Their install
 | Operator: “nothing happens, and UI is … for TV” | Replace the single long form and positional focus tags with a fixed navigation rail and separate Home, Schedule, Warmth, Diagnostics and Settings pages. Use dp-sized targets, high-contrast focus, stable semantic focus keys, three phase cards and remote-only numeric/time editing. Connection/probe/confirmation/recovery are visible Home actions, not hidden checkboxes. |
 | `playback-native-steady` and `playback-qualified-fade` labels, but no successful read/probe/report | Labels are not proof that either mode ran. No native/fade/persistence/playback acceptance is established. |
 | Later CPU accounting shows approximately 0.1% each for the app and APK worker; app PSS is around 21–26 MiB | These samples do not establish a leak, a performance regression or a benchmark. They also do not prove steady-state behaviour of the newer backend. |
+| The APK worker remains present across one-shot service captures | Review found cleanup queued immediately before scheduler shutdown, whose Android policy can cancel queued zero-delay tasks. Teardown now runs close before shutdown; a blocked-call/queued-cleanup regression proves the ordering. This is a verified source defect, not proof that every retained PID in the archive had that cause. |
 | Stremio MEDIA_BUTTON receiver ANRs in the global log | These belong to Stremio. The archive does not establish that Red Moon caused them. |
 
 ## Native signature evidence
