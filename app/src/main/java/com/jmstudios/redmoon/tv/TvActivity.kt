@@ -1,224 +1,398 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 package com.jmstudios.redmoon.tv
 
-import android.Manifest
-import android.app.*
+import android.app.Activity
+import android.app.AlertDialog
 import android.content.*
-import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.text.TextUtils
 import android.view.*
 import android.widget.*
-import java.time.*
+import com.jmstudios.redmoon.BuildConfig
+import java.time.Instant
+import java.time.ZoneId
 
-/** Leanback entry point with ordinary focusable controls; no touch-only controls. */
+/** TV pages with stable focus keys, density-independent targets and no keyboard dependency. */
 class TvActivity : Activity() {
+    private enum class Page(val title: String) { HOME("Home"), SCHEDULE("Schedule"), WARMTH("Warmth"), DIAGNOSTICS("Diagnostics"), SETTINGS("Settings") }
     private lateinit var prefs: TvPreferences
     private lateinit var rows: LinearLayout
-    private lateinit var status: TextView
-    private var building = false
-    private var controlTag = 1
-    private var diagnostics = false
-    private var renderedRoot = false
+    private lateinit var scroll: ScrollView
+    private lateinit var statusView: TextView
+    private var nativeValue: TextView? = null
+    private var warmthValue: TextView? = null
+    private var firstControl: View? = null
+    private var activeNav: View? = null
+    private var page = Page.HOME
+    private var renderedState = ""
+    private var startedRead = false
     private var scheduleDraft: MutableList<PhaseSetting>? = null
+    private val ink = Color.rgb(237, 242, 250)
+    private val muted = Color.rgb(165, 182, 206)
+    private val accent = Color.rgb(110, 221, 204)
     private val refresh = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (renderedRoot != prefs.rootBackend) render() else refreshStatus(intent.getStringExtra("status"))
-        }
+        override fun onReceive(context: Context, intent: Intent) { refreshState() }
     }
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    override fun onCreate(state: Bundle?) {
+        super.onCreate(state)
         prefs = TvPreferences(this)
+        page = Page.values().firstOrNull { it.name == state?.getString("page") } ?: Page.HOME
+        val draft = state?.getIntArray("draft")
+        if (draft != null && draft.size == 9) scheduleDraft = Phase.values().mapIndexed { i, p ->
+            PhaseSetting(p, draft[i * 3], draft[i * 3 + 1], draft[i * 3 + 2])
+        }.toMutableList()
         render()
-        prefs.prepareIdentity { if (!isFinishing && !isDestroyed) render() }
+        prefs.prepareIdentity {
+            if (!isFinishing && !isDestroyed) {
+                refreshState()
+                // One read on a new build/first connection, never an automatic setter/retry.
+                if (!startedRead && prefs.readState == "not_checked" && android.os.Build.DEVICE.startsWith("xiaoyushan")) {
+                    startedRead = true; command("read")
+                }
+            }
+        }
     }
     override fun onStart() { super.onStart(); registerReceiver(refresh, IntentFilter(TvDisplayService.STATUS)) }
     override fun onStop() { unregisterReceiver(refresh); super.onStop() }
-    override fun onResume() { super.onResume(); if (::status.isInitialized) refreshStatus() }
-    private fun refreshStatus(progress: String? = null) {
-        val state = try { prefs.policy().at(Instant.now(), ZoneId.systemDefault()) }
-            catch (error: IllegalArgumentException) { status.text = "Invalid saved schedule: ${error.message}"; return }
-        status.text = "${if (!prefs.identityReady) "Checking installed vendor identity…\n" else ""}${progress ?: prefs.status}\n${prefs.warmthStatus}\nScheduled phase: ${state.current.phase.title} · next ${state.next.setting.phase.title} at ${time(state.next.setting.startMinute)} (${ZoneId.systemDefault()})"
+    override fun onResume() { super.onResume(); if (::prefs.isInitialized) render() }
+    override fun onSaveInstanceState(out: Bundle) {
+        out.putString("page", page.name)
+        scheduleDraft?.let { out.putIntArray("draft", it.flatMap { s -> listOf(s.level, s.startMinute, s.fadeSeconds) }.toIntArray()) }
+        super.onSaveInstanceState(out)
     }
-    private fun render() {
-        val oldFocus = currentFocus?.tag as? Int
-        val oldScroll = if (::rows.isInitialized) (rows.parent as? ScrollView)?.scrollY ?: 0 else 0
-        controlTag = 1
-        building = true
-        renderedRoot = prefs.rootBackend
-        rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(48, 24, 48, 32); setBackgroundColor(Color.rgb(18, 22, 30)) }
-        setContentView(ScrollView(this).apply { isFillViewport = true; addView(rows) })
-        text("Red Moon TV", 30f).setTypeface(null, Typeface.BOLD)
-        text("A4 native backlight · independent warmth", 18f)
-        status = text("", 17f)
-        refreshStatus()
-        button(if (diagnostics) "Close diagnostics" else "Diagnostics and native qualification") { diagnostics = !diagnostics; render() }
-        if (diagnostics) {
-        text("${com.jmstudios.redmoon.BuildConfig.APPLICATION_ID} · ${com.jmstudios.redmoon.BuildConfig.SOURCE_SHA.take(12)} · build ${com.jmstudios.redmoon.BuildConfig.BUILD_ID}", 16f)
-        button("Copy bounded diagnostic report") {
-            val clip = getSystemService(android.content.ClipboardManager::class.java)
-            clip.setPrimaryClip(ClipData.newPlainText("Red Moon TV diagnostics", DiagnosticsExporter.report(this)))
-            message("Diagnostic report copied. Vendor log collection is documented in A4-VALIDATION.md.")
+    override fun onBackPressed() { if (page != Page.HOME) open(Page.HOME) else super.onBackPressed() }
+    private fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
+    private fun setup() = tvSetupStep(prefs.identityReady, RecoveryJournal.exists(this), prefs.readState,
+        prefs.nativeLevel, prefs.writeContextReady, prefs.probeComplete, prefs.nativeQualified)
+    private fun stateKey() = listOf(setup(), prefs.rootBackend, prefs.backlightEnabled, prefs.warmthEnabled,
+        prefs.probeComplete, prefs.nativeQualified, prefs.store.getBoolean("probe-active", false)).joinToString(":")
+    private fun policy() = try { prefs.policy() } catch (_: IllegalArgumentException) { BrightnessPolicy.defaults() }
+    private fun summary(): String = if (prefs.store.getBoolean("probe-active", false) && !RecoveryJournal.exists(this))
+        prefs.status.substringBefore('\n') else when (setup()) {
+        TvSetupStep.CHECKING -> "Checking installed TV bindings…"
+        TvSetupStep.CONNECT -> "Connect backlight to read the TV's native level. Warmth works independently."
+        TvSetupStep.READING -> if (prefs.rootBackend) "Connecting with root… allow Magisk on the TV if prompted." else "Reading the TV backlight…"
+        TvSetupStep.FAILED -> "Connection failed: ${prefs.store.getString("last-native-error", "open Diagnostics for the first error")?.lineSequence()?.firstOrNull()}"
+        TvSetupStep.READ_ONLY -> "Native level is readable, but range or picture/boot context is unverified. Writes are blocked."
+        TvSetupStep.PROBE -> "Connected. Run the small visible test before enabling backlight control."
+        TvSetupStep.CONFIRM -> "The original level was restored. Confirm what you saw on the panel."
+        TvSetupStep.RECOVERY -> "A saved native session needs attention. Restore it or explicitly keep the current level."
+        TvSetupStep.READY -> if (prefs.backlightEnabled) prefs.status.substringBefore('\n') else "Backlight paused. The current native level is retained."
+    }
+    private fun refreshState() {
+        if (!::rows.isInitialized) return
+        if (renderedState != stateKey()) { render(); return }
+        statusView.text = summary()
+        nativeValue?.text = prefs.nativeLevel?.let { "$it%" } ?: "—"
+        warmthValue?.text = prefs.warmthStatus
+    }
+    private fun open(target: Page) { page = target; render(resetScroll = true) }
+    private fun render(resetScroll: Boolean = false) {
+        val focused = currentFocus?.tag as? String
+        val previousScroll = if (::scroll.isInitialized && !resetScroll) scroll.scrollY else 0
+        nativeValue = null; warmthValue = null; firstControl = null
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; setPadding(dp(32), dp(24), dp(32), dp(24))
+            setBackgroundColor(Color.rgb(12, 18, 29))
         }
-        button("Keep current native level and clear saved recovery") {
-            AlertDialog.Builder(this).setMessage("Clears the saved original and any uncertain write. Scheduling stays paused. Use only after checking the native TV Backlight setting.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Keep") { _, _ -> command("keep"); render() }.show()
+        setContentView(root)
+        val rail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, dp(20), 0) }
+        root.addView(rail, LinearLayout.LayoutParams(dp(176), -1))
+        rail.addView(label("RED MOON", 21, accent).apply { setTypeface(null, Typeface.BOLD); setPadding(dp(8), dp(8), 0, dp(18)) })
+        Page.values().forEach { target ->
+            val item = makeButton(target.title, "nav-${target.name}", target == page) { open(target) }
+            rail.addView(item, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(8) })
+            if (target == page) activeNav = item
         }
-        text("Selected backlight backend: ${if (prefs.rootBackend) "Root worker (experimental)" else "APK worker (default)"}", 16f)
-        button(if (prefs.rootBackend) "Select ordinary APK backend" else "Select root fallback") {
-            AlertDialog.Builder(this).setTitle("Change backlight backend")
-                .setMessage("Pause scheduling and Restore or Keep any saved session first. Root uses a single private 32-bit worker and may request Magisk permission on Read. It does not bypass JNI namespaces or service permissions automatically. No panel write occurs on selection. Qualification is reset for the selected backend.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Select") { _, _ -> command(if (prefs.rootBackend) "use_apk" else "use_root") }.show()
+        rail.addView(label("A4 display control", 13, muted).apply { setPadding(dp(8), dp(16), 0, 0) })
+        scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false; isVerticalScrollBarEnabled = false }
+        root.addView(scroll, LinearLayout.LayoutParams(0, -1, 1f))
+        rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(6), dp(4), dp(6), dp(16)) }
+        scroll.addView(rows, ScrollView.LayoutParams(-1, -2))
+        text(page.title, 30, bold = true)
+        statusView = text(summary(), 17, muted).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        when (page) {
+            Page.HOME -> home()
+            Page.SCHEDULE -> schedule()
+            Page.WARMTH -> warmth()
+            Page.DIAGNOSTICS -> diagnostics()
+            Page.SETTINGS -> settings()
         }
-        button("Read native backlight (selected backend)") { command("read") }.requestFocus()
-        button("Restart native worker and read (no panel write)") { command("read_restart") }
-        button("Test a nearby native level for 15 seconds, then restore") {
-            AlertDialog.Builder(this).setTitle("Native backlight probe")
-                .setMessage("Tests a nearby five-point change using the selected backend and attempts restoration after 15 seconds. Check the actual screen and native Backlight slider. The root backend may request Magisk permission. If interrupted, restore in TV Settings. The test does not qualify fades or input switching.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Test") { _, _ -> command("probe") }.show()
+        renderedState = stateKey()
+        firstControl = firstFocusable(rows)
+        firstControl?.let { first -> activeNav?.nextFocusRightId = first.id; first.nextFocusLeftId = activeNav?.id ?: View.NO_ID }
+        val restored = focused?.let { root.findViewWithTag<View>(it) }?.takeIf { it.isEnabled && it.isFocusable }
+        (restored ?: firstControl ?: activeNav)?.requestFocus()
+        scroll.post { scroll.scrollTo(0, previousScroll) }
+    }
+    private fun home() {
+        val hero = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(10)); background = panel() }
+        rows.addView(hero, LinearLayout.LayoutParams(-1, dp(88)).apply { topMargin = dp(12); bottomMargin = dp(12) })
+        nativeValue = label(prefs.nativeLevel?.let { "$it%" } ?: "—", 44, ink).apply { setTypeface(null, Typeface.BOLD) }
+        hero.addView(nativeValue, LinearLayout.LayoutParams(dp(148), -2))
+        val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        hero.addView(detail, LinearLayout.LayoutParams(0, -2, 1f))
+        detail.addView(label("Last confirmed backlight", 18, ink))
+        detail.addView(label(if (prefs.rootBackend) "Root connection" else "APK connection", 15, muted))
+        val activeProbe = prefs.store.getBoolean("probe-active", false)
+        if (activeProbe) {
+            actions(listOf("Test running…" to {}, "Restore now" to { command("revert") })).first().isEnabled = false
+        } else when (setup()) {
+            TvSetupStep.CHECKING, TvSetupStep.READING -> button(if (setup() == TvSetupStep.READING) "Reading backlight…" else "Checking TV…", "home-wait") {}.isEnabled = false
+            TvSetupStep.CONNECT -> button("Connect backlight", "home-connect") { command("read") }
+            TvSetupStep.FAILED, TvSetupStep.READ_ONLY -> actions(listOf("Read again" to { command("read") },
+                (if (prefs.rootBackend) "Use APK connection" else "Try root connection") to { chooseBackend(!prefs.rootBackend) }))
+            TvSetupStep.PROBE -> actions(listOf("Test & restore" to { confirmProbe() }, "Read again" to { command("read") }))
+            TvSetupStep.CONFIRM -> actions(listOf("Confirm visible test" to { confirmNative() }, "Repeat test" to { confirmProbe() }))
+            TvSetupStep.RECOVERY -> actions(listOf("Restore saved level" to { command("restore") }, "Keep current level" to { confirmKeep() }))
+            TvSetupStep.READY -> actions(listOf((if (prefs.backlightEnabled) "Pause backlight" else "Resume schedule") to {
+                command(if (prefs.backlightEnabled) "pause" else "resume") }, "Read again" to { command("read") }))
         }
-        button("Revert current preview") { command("revert") }
-        toggle("Native control, restoration and input/picture behaviour physically verified", prefs.nativeQualified) { checked ->
-            if (checked && !prefs.probeComplete) {
-                message("Complete the native read/change/restore probe first, then verify the screen and input/picture behaviour.")
-                render()
-            } else { prefs.nativeQualified = checked; if (!checked) { prefs.backlightEnabled = false; command("pause") } }
+        val p = policy()
+        val group = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        rows.addView(group, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        p.settings.forEachIndexed { index, setting ->
+            val card = makeButton("${setting.phase.title}\n${setting.level}%\n${time(setting.startMinute)}", "phase-${setting.phase}") {
+                command("phase", setting.phase)
+            }.apply { gravity = Gravity.CENTER; textSize = 18f; isEnabled = setup() == TvSetupStep.READY && !activeProbe }
+            group.addView(card, LinearLayout.LayoutParams(0, dp(86), 1f).apply { if (index > 0) leftMargin = dp(10) })
         }
-        toggle("Repeated writes are qualified for fades (persistence checked)", prefs.fadesQualified) { checked ->
-            if (checked && !prefs.nativeQualified) { message("Verify native control first. Repeated-write persistence must be separately established."); render() }
-            else prefs.fadesQualified = checked
+        val phase = p.at(Instant.now(), ZoneId.systemDefault())
+        text("Scheduled: ${phase.current.phase.title} · next ${phase.next.setting.phase.title} at ${time(phase.next.setting.startMinute)}", 15, muted)
+        text("Phase buttons hold until the next scheduled boundary. Warmth remains independent.", 14, muted)
+    }
+    private fun schedule() {
+        toggle("Backlight schedule", prefs.backlightEnabled, "schedule-enable", setup() == TvSetupStep.READY) {
+            command(if (it) "resume" else "pause")
         }
+        if (setup() != TvSetupStep.READY) button("Finish connection setup on Home", "schedule-setup") { open(Page.HOME) }
+        text(if (scheduleDraft == null) "Select a value to edit. Save applies all three phases together." else "Unsaved changes · all three phases will be validated together", 15, muted)
+        val settings = scheduleDraft?.toList() ?: policy().settings
+        columns(settings) { setting ->
+            text(setting.phase.title, 22, accent, true)
+            text(if (setting.phase == Phase.DAY) "Maximum · 70–100%" else "Minimum · ${setting.phase.minimum}–${setting.phase.maximum}%", 13, muted)
+            button("${setting.level}%", "level-${setting.phase}") {
+                number("${setting.phase.title} backlight", setting.level, setting.phase.minimum, setting.phase.maximum, { "$it%" }) { edit(setting.copy(level = it)) }
+            }.textSize = 29f
+            button(time(setting.startMinute), "time-${setting.phase}") { clock(setting.startMinute) { edit(setting.copy(startMinute = it)) } }
+            button("Fade ${setting.fadeSeconds}s", "fade-${setting.phase}") { fade(setting.fadeSeconds) { edit(setting.copy(fadeSeconds = it)) } }
         }
-        text("Backlight schedule", 23f)
-        toggle("Enable backlight schedule", prefs.backlightEnabled) { checked ->
-            if (checked && !prefs.nativeQualified) { message("The backlight probe must be physically verified first."); render() }
-            else { prefs.backlightEnabled = checked; command(if (checked) "resume" else "pause") }
+        if (scheduleDraft != null) actions(listOf("Save schedule" to {
+            try { prefs.save(BrightnessPolicy(scheduleDraft!!.toList())); scheduleDraft = null; command(); render() }
+            catch (error: IllegalArgumentException) { message(error.message ?: "Invalid schedule") }
+        }, "Cancel changes" to { scheduleDraft = null; render() }))
+        text("Day ≥ Dusk ≥ Dim. Incoming phase limits apply immediately; fades stay within that phase's band. Times use ${ZoneId.systemDefault()}.", 14, muted)
+    }
+    private fun warmth() {
+        warmthValue = text(prefs.warmthStatus, 18, accent)
+        val permission = Settings.canDrawOverlays(this)
+        if (!permission) button("Allow warmth over other apps", "warmth-permission") {
+            try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
+            catch (_: RuntimeException) { message("Open Android Settings → Apps → Special app access → Display over other apps → Red Moon TV.") }
         }
-        if (scheduleDraft == null) button("Edit Day / Dusk / Dim schedule") { scheduleDraft = prefs.policy().settings.toMutableList(); render() }
-        scheduleDraft?.toList()?.forEach { setting ->
-            text("${setting.phase.title} · draft ${time(setting.startMinute)}", 20f)
-            button("${if (setting.phase == Phase.DAY) "Maximum" else "Minimum"} and target: ${setting.level}%") {
-                number("${setting.phase.title} level", setting.level, setting.phase.minimum, setting.phase.maximum) { editDraft(setting.copy(level = it)) }
+        toggle("Warmth schedule", prefs.warmthEnabled, "warmth-enable", permission) { prefs.warmthEnabled = it; command("warmth"); render() }
+        toggle("Use brightness phase times", prefs.linked, "warmth-linked") { prefs.linked = it; command("warmth"); render() }
+        if (prefs.linked) columns(Phase.values().toList()) { phase ->
+            text(phase.title, 21, accent, true)
+            button("${prefs.warmth(phase)}% warmth", "warmth-$phase") {
+                number("${phase.title} warmth", prefs.warmth(phase), 0, 100, { "$it%" }) {
+                    prefs.store.edit().putInt("warmth-$phase", it).apply(); command("warmth"); render()
+                }
             }
-            button("Starts: ${time(setting.startMinute)}") { clock(setting.startMinute) { editDraft(setting.copy(startMinute = it)) } }
-            button("Incoming fade: ${setting.fadeSeconds} seconds") {
-                val presets = arrayOf("0", "5", "15", "30", "60", "120", "300", "600", "888", "Custom")
-                AlertDialog.Builder(this).setTitle("Incoming fade in seconds").setItems(presets) { _, which ->
-                    if (which == 9) number("Incoming fade", setting.fadeSeconds, 0, 888) { editDraft(setting.copy(fadeSeconds = it)) }
-                    else editDraft(setting.copy(fadeSeconds = presets[which].toInt()))
-                }.show()
-            }
-        }
-        if (scheduleDraft != null) {
-            button("Save all three phases") {
-                try { prefs.save(BrightnessPolicy(scheduleDraft!!.toList())); scheduleDraft = null; command(); render() }
-                catch (error: IllegalArgumentException) { message(error.message ?: "Invalid schedule") }
-            }
-            button("Cancel schedule edits") { scheduleDraft = null; render() }
-        }
-        text("Phase limits apply immediately; fades continue within them. For example, 90 → Dusk 40 steps to 80 before fading. Native percentages are slider positions, not measured light output.", 16f)
-        text("Temporary phase · automatic schedule resumes at the next boundary", 17f)
-        val quick = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; rows.addView(quick)
-        Phase.values().forEach { phase ->
-            val b = Button(this).apply { tag = controlTag++; text = phase.title; setOnClickListener { if (prefs.nativeQualified) { command("phase", phase); render() } else message("Verify native control first") } }
-            quick.addView(b, LinearLayout.LayoutParams(0, 64, 1f))
-        }
-        button("Resume scheduled phase") { command("resume"); render() }
-        button("Pause backlight changes (keep current level)") { command("pause"); render() }
-        button("Pause and transfer control to another installed build") {
-            AlertDialog.Builder(this).setMessage("Pauses this build, releases its live lease and clears its saved original after pending work settles. Then open the other build and Resume. The current panel level is retained.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Release control") { _, _ -> command("keep"); render() }.show()
-        }
-        button("Pause and restore saved native backlight") { command("restore"); render() }
-        text("Warmth", 23f)
-        toggle("Enable warmth schedule", prefs.warmthEnabled) { prefs.warmthEnabled = it; command("warmth") }
-        toggle("Follow brightness phase times", prefs.linked) { prefs.linked = it; command("warmth"); render() }
-        if (prefs.linked) Phase.values().forEach { phase ->
-            button("${phase.title} warmth: ${prefs.warmth(phase)}%") { number("Warmth strength", prefs.warmth(phase), 0, 100) {
-                prefs.store.edit().putInt("warmth-$phase", it).apply(); command("warmth"); render()
-            }}
         } else {
-            button("Warmth starts: ${time(prefs.warmthStart)}") { clock(prefs.warmthStart) { value ->
-                if (value == prefs.warmthEnd) message("Start and end must differ") else { prefs.warmthStart = value; command("warmth"); render() }
-            }}
-            button("Warmth ends: ${time(prefs.warmthEnd)}") { clock(prefs.warmthEnd) { value ->
-                if (value == prefs.warmthStart) message("Start and end must differ") else { prefs.warmthEnd = value; command("warmth"); render() }
-            }}
-            button("Custom warmth: ${prefs.store.getInt("custom-strength", 40)}%") { number("Warmth strength", prefs.store.getInt("custom-strength", 40), 0, 100) {
-                prefs.store.edit().putInt("custom-strength", it).apply(); command("warmth"); render()
-            }}
+            button("Starts ${time(prefs.warmthStart)}", "warmth-start") { clock(prefs.warmthStart) {
+                if (it == prefs.warmthEnd) message("Start and end must differ") else { prefs.warmthStart = it; command("warmth"); render() }
+            } }
+            button("Ends ${time(prefs.warmthEnd)}", "warmth-end") { clock(prefs.warmthEnd) {
+                if (it == prefs.warmthStart) message("Start and end must differ") else { prefs.warmthEnd = it; command("warmth"); render() }
+            } }
+            button("Strength ${prefs.store.getInt("custom-strength", 40)}%", "warmth-strength") {
+                number("Warmth strength", prefs.store.getInt("custom-strength", 40), 0, 100) {
+                    prefs.store.edit().putInt("custom-strength", it).apply(); command("warmth"); render()
+                }
+            }
         }
         val colour = prefs.store.getInt("warmth-colour", 40)
-        button("Approximate warmth colour: ${500 + colour * 30} K") { number("Warmth colour · 500–3500 K", colour, 0, 100, { "${500 + it * 30} K" }) {
-            prefs.store.edit().putInt("warmth-colour", it).apply(); command("warmth"); render()
-        }}
-        button("Warmth fade: ${prefs.warmthFade} seconds") { number("Warmth fade", prefs.warmthFade, 0, 888) { prefs.warmthFade = it; command("warmth"); render() } }
-        button("Allow display over other apps") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
-        button("Warmth off now (backlight unchanged)") { command("warmth_off"); render() }
-        toggle("Allow external controls — any installed app can send commands", prefs.store.getBoolean("external-control", false)) { enabled ->
-            if (!enabled) prefs.store.edit().putBoolean("external-control", false).apply()
-            else AlertDialog.Builder(this).setTitle("Allow external display controls?")
-                .setMessage("This optional interface is open to every installed app, including tvQuickActions and ADB. It allows Day/Dusk/Dim, Pause, Resume, Warmth Off and Read. It cannot run shell/root commands, probes, qualification or restoration. Leave it off unless you trust the apps installed on this TV.")
-                .setNegativeButton("Keep off") { _, _ -> prefs.store.edit().putBoolean("external-control", false).apply(); render() }
-                .setPositiveButton("Allow") { _, _ -> prefs.store.edit().putBoolean("external-control", true).apply(); render() }
-                .setOnCancelListener { render() }.show()
-        }
-        text("Use Up/Down to move, OK to edit, Left/Right to adjust, Back to cancel. Native backlight and playback filter coverage require testing on this A4. Pausing warmth never restores daytime brightness.", 16f)
-        building = false
-        if (oldFocus != null) {
-            rows.findViewWithTag<View>(oldFocus)?.requestFocus()
-            (rows.parent as ScrollView).post { (rows.parent as ScrollView).scrollTo(0, oldScroll) }
-        }
-    }
-    private fun text(value: String, size: Float): TextView = TextView(this).apply {
-        text = value; textSize = size; setTextColor(Color.WHITE); setPadding(8, 12, 8, 8); rows.addView(this)
-    }
-    private fun button(label: String, action: () -> Unit): Button = Button(this).apply {
-        tag = controlTag++; text = label; isAllCaps = false; gravity = Gravity.START or Gravity.CENTER_VERTICAL; minHeight = 60
-        setOnClickListener { action() }; rows.addView(this, LinearLayout.LayoutParams(-1, -2))
-    }
-    private fun toggle(label: String, checked: Boolean, change: (Boolean) -> Unit) {
-        rows.addView(CheckBox(this).apply { tag = controlTag++; text = label; textSize = 18f; setTextColor(Color.WHITE); isChecked = checked
-            setPadding(8, 10, 8, 10); setOnCheckedChangeListener { _, value -> if (!building) change(value) }
-        })
-    }
-    private fun number(title: String, value: Int, min: Int, max: Int, format: (Int) -> String = { it.toString() }, save: (Int) -> Unit) {
-        val picker = NumberPicker(this).apply {
-            minValue = min; maxValue = max; this.value = value; wrapSelectorWheel = false
-            setFormatter { format(it) }; descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-            setOnKeyListener { _, key, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && (key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT)) {
-                    this.value = (this.value + (if (key == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1) * (if (event.repeatCount > 5) 10 else 1)).coerceIn(min, max)
-                    true
-                } else false
+        button("Colour · approximately ${500 + colour * 30} K", "warmth-colour") {
+            number("Warmth colour", colour, 0, 100, { "${500 + it * 30} K" }) {
+                prefs.store.edit().putInt("warmth-colour", it).apply(); command("warmth"); render()
             }
         }
-        AlertDialog.Builder(this).setTitle(title).setView(picker).setNegativeButton("Cancel", null)
-            .setPositiveButton("Save") { _, _ -> save(picker.value) }.show()
-        picker.requestFocus()
+        button("Warmth fade · ${prefs.warmthFade}s", "warmth-fade") { fade(prefs.warmthFade) { prefs.warmthFade = it; command("warmth"); render() } }
+        button("Warmth off now", "warmth-off") { command("warmth_off"); render() }
+        text("Warmth off never changes the native backlight. Colour is approximate; video-plane coverage still needs the TV.", 14, muted)
     }
-    private fun clock(value: Int, save: (Int) -> Unit) {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        val hour = NumberPicker(this).apply { minValue = 0; maxValue = 23; this.value = value / 60; descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS }
-        val minute = NumberPicker(this).apply { minValue = 0; maxValue = 59; this.value = value % 60; descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS }
-        box.addView(hour); box.addView(minute)
-        AlertDialog.Builder(this).setTitle("Start time · hour : minute").setView(box).setNegativeButton("Cancel", null)
-            .setPositiveButton("Save") { _, _ -> save(hour.value * 60 + minute.value) }.show()
-        hour.requestFocus()
+    private fun diagnostics() {
+        text("${packageName}\n${BuildConfig.SOURCE_SHA.take(12)} · ${BuildConfig.BUILD_ID}\n${BuildConfig.BACKEND_PROTOCOL}", 15, muted)
+        actions(listOf("Read backlight" to { command("read") }, "Restart & read" to { command("read_restart") }))
+        if (RecoveryJournal.exists(this)) actions(listOf("Restore saved level" to { command("restore") }, "Keep current level" to { confirmKeep() }))
+        if (prefs.probeComplete && !prefs.nativeQualified) button("Confirm visible panel test", "diag-confirm") { confirmNative() }
+        toggle("Enable fades · persistence checked", prefs.fadesQualified, "diag-fades", prefs.nativeQualified) {
+            if (!it) { prefs.fadesQualified = false; render() }
+            else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Repeated native writes")
+                .setMessage("Enable only after checking vendor persistence and real long-fade/playback behaviour. A restored single probe does not establish repeated-write safety.")
+                .setNegativeButton("Cancel", null).setPositiveButton("Verified") { _, _ -> prefs.fadesQualified = true; render() }.show()
+        }
+        button("Copy full diagnostic report", "diag-copy") {
+            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Red Moon TV", DiagnosticsExporter.report(this)))
+            message("Copied. The ADB collector also reads this automatically, even when the display service is stopped.")
+        }
+        text(DiagnosticsExporter.report(this), 13, muted).typeface = Typeface.MONOSPACE
     }
-    private fun editDraft(setting: PhaseSetting) {
-        scheduleDraft = scheduleDraft?.map { if (it.phase == setting.phase) setting else it }?.toMutableList()
+    private fun settings() {
+        text("Connection", 22, accent, true)
+        button(if (prefs.rootBackend) "Selected: Root · switch to APK" else "Selected: APK · switch to Root", "settings-backend") { chooseBackend(!prefs.rootBackend) }
+        text("APK is the default. Root requires a rooted TV and an explicit Magisk grant; it is never selected automatically.", 15, muted)
+        button("Pause and transfer control to another build", "settings-transfer") {
+            AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setMessage("Pause, release the live lease and clear this build's saved original? The current native level is retained.")
+                .setNegativeButton("Cancel", null).setPositiveButton("Transfer") { _, _ -> command("keep") }.show()
+        }
+        val external = prefs.store.getBoolean("external-control", false)
+        toggle("External automation", external, "settings-external") { enabled ->
+            if (!enabled) { prefs.store.edit().putBoolean("external-control", false).apply(); render() }
+            else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Allow installed apps to control Red Moon?")
+                .setMessage("Every installed app can send the fixed Day/Dusk/Dim, Pause, Resume, Warmth Off and Read commands. No shell, probe, restore or qualification commands are exposed.")
+                .setNegativeButton("Keep off", null).setPositiveButton("Allow") { _, _ -> prefs.store.edit().putBoolean("external-control", true).apply(); render() }.show()
+        }
+        text("Red Moon TV · ${BuildConfig.VERSION_NAME}\nBuild ${BuildConfig.BUILD_ID} · ${BuildConfig.SOURCE_SHA.take(12)}", 15, muted)
+    }
+    private fun confirmProbe() {
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Small backlight test")
+            .setMessage("Keep this input and picture mode unchanged. Change the native level by five points, then attempt restoration after 15 seconds. Watch the real panel and Backlight slider. If interrupted, use native TV Settings to recover.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Test & restore") { _, _ -> command("probe") }.show()
+    }
+    private fun confirmNative() {
+        if (!prefs.probeComplete) return
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Did the panel change and return?")
+            .setMessage("Confirm only if you saw the physical backlight change and the original level return, and checked current input/picture behaviour. This enables native control on the tested setup. It does not qualify fades or other source/HDR modes.")
+            .setNegativeButton("Not confirmed", null).setPositiveButton("Confirmed") { _, _ -> prefs.nativeQualified = true; render() }.show()
+    }
+    private fun confirmKeep() {
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Keep the current native level?")
+            .setMessage("Check native TV Settings first. This clears the saved original and leaves scheduling paused; it does not write the panel.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Keep current") { _, _ -> command("keep") }.show()
+    }
+    private fun chooseBackend(root: Boolean) {
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(if (root) "Connect using root?" else "Connect using APK?")
+            .setMessage("Pause backlight scheduling and resolve any saved recovery first. ${if (root) "Read will request Magisk permission on the TV." else "No root is requested."} The connection change resets native qualification. No backlight write occurs.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Connect") { _, _ -> command(if (root) "use_root_read" else "use_apk_read") }.show()
+    }
+    private fun edit(setting: PhaseSetting) {
+        if (scheduleDraft == null) scheduleDraft = policy().settings.toMutableList()
+        scheduleDraft = scheduleDraft!!.map { if (it.phase == setting.phase) setting else it }.toMutableList()
         render()
     }
     private fun command(name: String = "reconcile", phase: Phase? = null) {
         if (name in listOf("pause", "restore", "keep")) prefs.backlightEnabled = false
         if (name in listOf("resume", "phase") && prefs.nativeQualified) prefs.backlightEnabled = true
         if (name == "warmth_off") prefs.warmthEnabled = false
+        if (name in listOf("read", "read_restart")) prefs.readStarted()
         TvDisplayService.command(this, name, phase)
+        refreshState()
     }
-    private fun message(value: String) { AlertDialog.Builder(this).setMessage(value).setPositiveButton("OK", null).show() }
+    private fun panel() = GradientDrawable().apply { setColor(Color.rgb(24, 35, 51)); cornerRadius = dp(12).toFloat() }
+    private fun firstFocusable(group: ViewGroup): View? {
+        for (i in 0 until group.childCount) {
+            val child = group.getChildAt(i)
+            if (child is ViewGroup) firstFocusable(child)?.let { return it }
+            if (child.isEnabled && child.isFocusable) return child
+        }
+        return null
+    }
+    private fun label(value: String, size: Int, colour: Int) = TextView(this).apply { text = value; textSize = size.toFloat(); setTextColor(colour) }
+    private fun text(value: String, size: Int, colour: Int = ink, bold: Boolean = false): TextView = label(value, size, colour).apply {
+        if (bold) setTypeface(null, Typeface.BOLD)
+        rows.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+    }
+    private fun makeButton(value: String, key: String, selected: Boolean = false, action: () -> Unit) = Button(this).apply {
+        id = View.generateViewId(); tag = key; text = value; textSize = 17f; isAllCaps = false
+        gravity = Gravity.START or Gravity.CENTER_VERTICAL; minHeight = dp(54); setPadding(dp(16), dp(8), dp(16), dp(8))
+        background = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply { setColor(accent); cornerRadius = dp(10).toFloat(); setStroke(dp(2), Color.WHITE) })
+            addState(intArrayOf(), GradientDrawable().apply { setColor(if (selected) Color.rgb(37, 78, 82) else Color.rgb(27, 40, 58)); cornerRadius = dp(10).toFloat() })
+        }
+        setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf(android.R.attr.state_focused), intArrayOf()),
+            intArrayOf(Color.rgb(102, 117, 137), Color.rgb(9, 26, 30), ink)))
+        setOnClickListener { action() }
+    }
+    private fun button(value: String, key: String, action: () -> Unit): Button = makeButton(value, key, action = action).also {
+        rows.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        if (firstControl == null) firstControl = it
+    }
+    private fun actions(items: List<Pair<String, () -> Unit>>): List<Button> {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        rows.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        val controls = items.mapIndexed { index, (value, action) ->
+            makeButton(value, "action-$page-$index-${value.substringBefore(' ')}", action = action).also {
+                row.addView(it, LinearLayout.LayoutParams(0, -2, 1f).apply { if (index > 0) leftMargin = dp(10) })
+                if (firstControl == null) firstControl = it
+            }
+        }
+        controls.forEachIndexed { i, b ->
+            b.nextFocusLeftId = if (i > 0) controls[i - 1].id else activeNav?.id ?: View.NO_ID
+            if (i < controls.lastIndex) b.nextFocusRightId = controls[i + 1].id
+        }
+        return controls
+    }
+    private fun toggle(value: String, checked: Boolean, key: String, enabled: Boolean = true, change: (Boolean) -> Unit) =
+        button("$value · ${if (checked) "On" else "Off"}", key) { change(!checked) }.apply { isEnabled = enabled }
+    private fun <T> columns(items: List<T>, build: (T) -> Unit) {
+        val parent = rows
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        parent.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(12) })
+        items.forEachIndexed { index, item ->
+            val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(14), dp(12), dp(6)); background = panel() }
+            row.addView(column, LinearLayout.LayoutParams(0, -2, 1f).apply { if (index > 0) leftMargin = dp(10) })
+            rows = column; build(item)
+        }
+        rows = parent
+    }
+    private fun number(title: String, initial: Int, min: Int, max: Int, format: (Int) -> String = { it.toString() }, save: (Int) -> Unit) {
+        var value = initial.coerceIn(min, max)
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(12), dp(24), dp(12)) }
+        box.addView(label("Left / Right adjust · hold for larger steps\nOK saves · Back cancels", 16, muted))
+        val display = makeButton(format(value), "number-value") {}.apply { gravity = Gravity.CENTER; textSize = 36f }
+        box.addView(display, LinearLayout.LayoutParams(dp(360), dp(88)))
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(title).setView(box)
+            .setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ -> save(value) }.create()
+        display.setOnClickListener { dialog.dismiss(); save(value) }
+        display.setOnKeyListener { _, key, event ->
+            if (key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    val step = if (event.repeatCount > 5) 10 else 1
+                    value = (value + if (key == KeyEvent.KEYCODE_DPAD_LEFT) -step else step).coerceIn(min, max)
+                    display.text = format(value)
+                }; true
+            } else false
+        }
+        dialog.show(); display.requestFocus()
+    }
+    private fun clock(initial: Int, save: (Int) -> Unit) {
+        var hour = initial / 60; var minute = initial % 60
+        val box = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(24), dp(12), dp(24), dp(12)) }
+        lateinit var h: Button; lateinit var m: Button
+        h = makeButton("Hour %02d".format(hour), "clock-hour") { number("Hour", hour, 0, 23) { hour = it; h.text = "Hour %02d".format(hour) } }
+        m = makeButton("Minute %02d".format(minute), "clock-minute") { number("Minute", minute, 0, 59) { minute = it; m.text = "Minute %02d".format(minute) } }
+        box.addView(h, LinearLayout.LayoutParams(dp(180), dp(64))); box.addView(m, LinearLayout.LayoutParams(dp(180), dp(64)).apply { leftMargin = dp(12) })
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("24-hour start time").setView(box)
+            .setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ -> save(hour * 60 + minute) }.create()
+        dialog.show(); h.requestFocus()
+    }
+    private fun fade(initial: Int, save: (Int) -> Unit) {
+        val presets = arrayOf("Immediate", "5 seconds", "15 seconds", "30 seconds", "60 seconds", "120 seconds", "300 seconds", "600 seconds", "888 seconds", "Custom")
+        val values = intArrayOf(0, 5, 15, 30, 60, 120, 300, 600, 888)
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Incoming fade").setItems(presets) { _, i ->
+            if (i == values.size) number("Fade in seconds", initial, 0, 888, save = save) else save(values[i])
+        }.show()
+    }
+    private fun message(value: String) { AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setMessage(value).setPositiveButton("OK", null).show() }
     private fun time(minute: Int) = String.format(java.util.Locale.ROOT, "%02d:%02d", minute / 60, minute % 60)
 }

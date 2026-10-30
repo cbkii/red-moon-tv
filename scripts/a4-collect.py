@@ -14,7 +14,7 @@ import time
 import zipfile
 
 PACKAGES = ('com.cbkii.redmoontv.testing', 'com.cbkii.redmoontv', 'com.cbkii.redmoontv.debug')
-RELEVANT = re.compile(r'RedMoonTV|redmoontv|twoworlds|TV_MtkTvConfig|HS_Set_Panel_Backlight|Backlight_Value|DISPOUT.*Backlight|AndroidRuntime|avc:.*(?:mtktv|hisense)', re.I)
+RELEVANT = re.compile(r'RedMoonTV|redmoontv|libcom_mediatek_twoworlds|UnsatisfiedLinkError|HS_Set_Panel_Backlight|Backlight_Value|DISPOUT.*Backlight|avc:.*(?:mtktv|hisense)', re.I)
 LIMIT = 65536
 
 
@@ -71,9 +71,10 @@ class Collector:
                   lambda text: '\n'.join(line for line in text.splitlines() if package in line or 'PID' in line))
         self.save(name + '-cpu.txt', ['shell', 'dumpsys', 'cpuinfo'],
                   lambda text: '\n'.join(line for line in text.splitlines() if package in line or 'TOTAL' in line or 'CPU usage' in line))
+        report = self.provider(name)
         _, dump = self.save(name + '-app.txt', ['shell', 'dumpsys', 'activity', 'service',
                   package + '/com.jmstudios.redmoon.tv.TvDisplayService'])
-        report = extract_report(dump[:LIMIT], package)
+        report = report or extract_report(dump[:LIMIT], package)
         if report is not None:
             self.reports[name] = report
             (self.destination / (name + '-report.json')).write_text(
@@ -83,10 +84,21 @@ class Collector:
         for pid in pids.split()[:4]:
             if re.fullmatch(r'[1-9][0-9]{0,8}', pid):
                 self.save(name + '-worker-' + pid + '.txt', ['shell', 'dumpsys', 'meminfo', pid])
+        return report
+
+    def provider(self, name, timeout=12):
+        # This endpoint is guarded by Android's DUMP permission and never starts JNI.
+        code, dump = self.save(name + '-provider.txt', ['shell', 'content', 'query', '--uri',
+                              'content://' + self.package + '.diagnostics/report'], timeout=timeout)
+        return extract_report(dump[:LIMIT], self.package) if not code else None
 
     def logs(self, name):
         self.save(name, ['logcat', '-d', '-t', '1800', '-v', 'threadtime'],
                   lambda text: '\n'.join(line for line in text.splitlines() if RELEVANT.search(line)))
+        # Filter by tag on the device before taking the final lines. Firmware channel
+        # spam must not displace the app's first failure from an unrelated global tail.
+        self.save(name[:-4] + '-app.txt', ['logcat', '-d', '-v', 'threadtime', '-s', 'RedMoonTV:*'],
+                  lambda text: '\n'.join(text.splitlines()[-400:]))
 
     def ask(self, key, message):
         answer = input(message + '\n> ').strip()[:2000]
@@ -103,26 +115,46 @@ class Collector:
               'Open this variant, pause backlight scheduling, and leave qualification toggles off.\n'
               'Do not clear a pending recovery record just to continue. Check native TV Settings.\n'
               'Keep input/picture/HDR state unchanged during the initial read and probe.')
-        self.ask('baseline', 'Record native Settings backlight, input/picture/SDR-HDR and selected backend.\n'
-                 'Then select Diagnostics > Read native backlight; wait for its result and enter notes.')
-        self.sample('read')
+        self.ask('baseline', 'Open the selected app on the TV. On Home, connect/read the backlight.\n'
+                 'Wait for the result, then press Enter. Native values and errors are collected automatically.\n'
+                 'Optional notes only; do not copy the report or type numeric readback.')
+        report = self.sample('read')
         self.logs('read-vendor-log.txt')
-        passed = self.ask('read_result', 'Did Read succeed with a valid level/range and write context?\n'
-                          'Enter yes only if confirmed; otherwise enter no or unknown with the error.')
-        if passed.lower() in ('yes', 'y'):
+        passed = bool(report and report.get('native_state') == 'ready' and
+                      isinstance(report.get('native_level'), int) and 0 <= report['native_level'] <= 100 and
+                      report.get('write_context_ready') and not report.get('recovery_pending'))
+        if report:
+            print('App read: state=%s; level=%s; write context=%s; backend=%s' %
+                  (report.get('native_state', 'legacy'), report.get('native_level'),
+                   report.get('write_context_ready'), report.get('selected_backend')))
+            if not passed:
+                print('App error: ' + str(report.get('last_native_error') or report.get('first_initialisation_error') or report.get('status')))
+        else:
+            print('No automatic app report. This installed APK may predate the ADB exporter; update the APK.\n'
+                  'The archive retains the provider/service errors and app logs. No manual readback entry is requested.')
+        if passed:
             probe = self.ask('probe_choice', 'Optional visible five-point probe: perform it now? [y/N]\n'
                              'Default is skip. This does not qualify fades or source/HDR changes.')
             if probe.lower() in ('yes', 'y'):
-                self.ask('probe_notes', 'On the TV select Test a nearby native level for 15 seconds, then restore.\n'
-                         'Confirm in the app only when ready; observe panel and native slider.\n'
-                         'Wait for restoration or an explicit error, then enter what happened.\n'
-                         'If restoration failed, use native TV Settings and retain recovery evidence.')
-                self.sample('probe')
+                self.ask('probe_started', 'On the TV select Test & restore and confirm when ready.\n'
+                         'Press Enter once the test starts. Native values and restoration are collected automatically.\n'
+                         'Watch the physical panel; if interrupted, native TV Settings is the recovery path.')
+                probe_report = self.sample('probe')
+                deadline = time.monotonic() + 25
+                progress = 0
+                while probe_report and probe_report.get('probe_active') and time.monotonic() < deadline:
+                    time.sleep(min(2, max(0, deadline - time.monotonic())))
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0: break
+                    progress += 1
+                    probe_report = self.provider('probe-progress-%02d' % progress, timeout=min(6, remaining))
+                    # A failed transport/report ends observation; it is never silently retried.
+                restored = self.sample('probe-restored')
+                print('Automatic restore result: restored=%s; native level=%s; recovery pending=%s' %
+                      (restored.get('probe_restored'), restored.get('native_level'), restored.get('recovery_pending'))
+                      if restored else 'Restoration report unavailable; inspect the captured errors.')
                 self.logs('probe-vendor-log.txt')
                 self.ask('visible_panel_change', 'Did the physical panel visibly change? yes / no / unknown')
-                self.ask('native_slider_change', 'Did native Settings reflect the intended change? yes / no / unknown')
-                self.ask('restoration', 'Did the original panel/slider level return? Record original/final values.\n'
-                         'Do not mark qualification from readback alone.')
         else:
             print('Probe skipped: retain the first native error. Do not enable scheduling/fades.')
         self.ask('other_notes', 'Any remaining error, recovery, playback or warmth observations? Enter to finish.')

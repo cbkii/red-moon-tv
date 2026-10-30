@@ -173,6 +173,10 @@
         </activity>
         <service android:name=".tv.A4NativeService" android:process=":backlight" android:exported="false" />
         <service android:name=".tv.TvDisplayService" android:exported="false" />
+        <provider android:name=".tv.TvDiagnosticsProvider"
+            android:authorities="${applicationId}.diagnostics" android:exported="true"
+            android:readPermission="android.permission.DUMP" android:writePermission="android.permission.DUMP"
+            android:grantUriPermissions="false" />
         <receiver android:name=".tv.TvReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

@@ -1,5 +1,11 @@
 # Implementation ledger — 30 October 2026
 
+## Device-result follow-up — 31 October 2026
+
+The supplied results identify the older signed 22f APK and a real `0..0` range-query failure before native level read; see [device analysis and corrective implementation](A4-DEVICE-RESULTS-2026-10-31.md). The updated implementation uses installed TVNative signatures and explicit min/max queries, permits read-only diagnosis without a validated range, and still blocks setters without actual range/context. Home/three-phase cards and separate Schedule/Warmth/Diagnostics/Settings pages replace the long form. The protected read-only ADB provider works independently of display-service lifetime, and the collector derives read/restore results automatically. Current protocol is `apk-jni-v4/root-pipe-v1`; physical acceptance remains open until an updated installed APK is tested.
+
+The entries below retain their original source/run evidence; they are not results for this follow-up.
+
 Target: cbkii/red-moon-tv PR #1 (`codex/a4-backlight-tv`), evolving from d3b003300754051ad7dc87a4e5cebbdd91d37a0b. Governing specification: revision 2 of the A4 engineering plan, 30 October 2026.
 
 Implemented source changes:

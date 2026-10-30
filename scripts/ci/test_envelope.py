@@ -36,6 +36,7 @@ class ApkMetadataTests(unittest.TestCase):
             with self.assertRaises(ValueError): check_badging(text, self.info())
     def test_backend_metadata_describes_embedded_apk_not_signer_script_revision(self):
         self.assertEqual('apk-jni-v3/root-pipe-v1', backend_protocol(b'dex\0apk-jni-v3/root-pipe-v1\0other'))
+        self.assertEqual('apk-jni-v4/root-pipe-v1', backend_protocol(b'dex\0apk-jni-v4/root-pipe-v1\0other'))
         self.assertEqual('apk-jni-v2', backend_protocol(b'dex\0apk-jni-v2\0other'))
     def test_missing_unknown_or_mixed_backend_is_not_silently_labelled(self):
         for dex in [b'unknown', b'apk-jni-v3/root-pipe-v10\0', b'apk-jni-v2\0apk-jni-v3/root-pipe-v1\0']:

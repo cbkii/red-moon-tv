@@ -96,6 +96,7 @@ class A4RootBacklightBackend(context: Context) : BacklightBackend {
         val result = call(RootProtocol.READ)
         contextIdentity = result.context.takeIf { it.isNotBlank() }
         check(result.level in 0..100) { "Invalid root native level" }
+        NativeSnapshot.record(result.level, contextIdentity != null, true)
         return result.level
     }
     override fun claim() { call(RootProtocol.CLAIM) }

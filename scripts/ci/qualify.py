@@ -29,7 +29,7 @@ def check_badging(text, info):
 def backend_protocol(dex):
     # Identify the embedded implementation, including supported older diagnostic builds.
     # An unknown/mixed artifact must not be labelled using this script's own source version.
-    known = ('apk-jni-v2', 'apk-jni-v3/root-pipe-v1')
+    known = ('apk-jni-v2', 'apk-jni-v3/root-pipe-v1', 'apk-jni-v4/root-pipe-v1')
     matches = [protocol for protocol in known if protocol.encode('ascii') + b'\0' in dex]
     if len(matches) != 1:
         raise ValueError('Missing or ambiguous embedded backend protocol')

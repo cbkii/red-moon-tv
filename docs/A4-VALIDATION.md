@@ -48,9 +48,9 @@ An older signed TESTING APK does not acquire newer root/backend features by runn
 ### What the guided session does
 
 1. Captures device/package identity and initial app/worker memory, process, CPU and service diagnostics. Optional `--apk` records the installed APK SHA-256.
-2. Asks you to open the selected app, pause scheduling, record native Backlight/input/picture/SDR-HDR/backend, select **Read native backlight**, and enter the result. Captures that checkpoint and bounded vendor logs immediately.
-3. Offers the existing five-point probe **only if you report a successful read with valid write context**. It defaults to skip. You initiate and confirm the probe with the TV remote; the collector sends no control broadcast, service-start command or setter.
-4. Captures the probe result and your separate observations of the real panel, native slider and restoration. A failed/unknown read skips the probe. It never sets qualification acknowledgements.
+2. Asks you to open Home and connect/read, then press Enter. It extracts the native value, backend, write context and error automatically from the protected app report. No numeric readback or error needs to be copied or typed.
+3. Offers the five-point probe **only when the app report confirms a successful read with write context and no pending recovery**. It defaults to skip. You initiate and confirm Test & restore with the TV remote; the collector sends no control broadcast, service-start command or setter.
+4. Captures the probe and restoration automatically, observing an active probe for at most 25 seconds. It asks for the optical panel observation which ADB cannot measure. A failed/unknown read skips the probe. It never sets qualification acknowledgements.
 5. Captures the final checkpoint and writes one uniquely named ZIP. Ctrl+C/EOF after collection begins preserves completed checkpoints and notes in an interrupted ZIP.
 
 The guided flag intentionally prompts and requires a terminal. Omit it for unattended snapshots. If a read fails, preserve the first error before selecting Restart worker; do not enable scheduling/fades or clear recovery just to continue. Probe interruption does not guarantee restoration; use native TV Settings for manual recovery.
@@ -63,13 +63,20 @@ Send the printed `a4-<label>-<UTC timestamp>.zip`, plus any visible behaviour th
 |---|---|
 | `README.txt`, `manifest.json` | Collection status, selected package, command exit codes, file hashes and captured report checkpoints |
 | `identity.txt`, `package.txt` | Device UTC clock, firmware/API/ABI/boot identity and installed package metadata |
-| `*-app.txt`, `*-report.json` | Raw service dumpsys and extracted schema-2/3 Red Moon JSON when available: source/build/protocol, backend, first error, recovery and runtime counters |
+| `*-provider.txt`, `*-app.txt`, `*-report.json` | Protected provider query, optional service dump and extracted app JSON: source/build/protocol, native state/level/context, first error, recovery and runtime counters |
 | `*-memory.txt`, `*-processes.txt`, `*-cpu.txt`, `*-worker-*.txt` | Bounded app/worker samples; these are not a trace or a statistical benchmark |
-| `*-vendor-log.txt`, `vendor-log.txt` | Relevant lines from the latest 1,800 logcat lines per checkpoint; the global buffer is never cleared |
+| `*-vendor-log.txt`, `vendor-log.txt`, `*-app.txt` log files | Relevant lines from the latest 1,800 global logcat lines plus a separate last-400-lines app-tag capture, so channel spam does not hide the first app failure; buffers are never cleared |
 | `observations.json` | Timestamped operator notes from guided mode, kept separate from automatic evidence |
 | `installed.apk` | Optional exact selected APK; its SHA-256 is recorded, not a newly built APK |
 
-Service JSON requires an installed build with the dumpsys exporter and a running display service. If it is unavailable, open the selected variant and perform Read, then collect again. Older APKs may only expose **Copy bounded diagnostic report**; send that copied text alongside the ZIP. Missing/denied diagnostics remain visible as warnings, not a passed hardware test.
+The updated APK exposes `content://PACKAGE.diagnostics/report`, protected by Android's DUMP permission available to ADB shell. Querying it does not start JNI, root or a setter and works after a one-shot display service has stopped. The collector also retains service dumps when available. For a manual automatic-report check:
+
+```sh
+adb -s TV_IP:5555 shell content query \
+  --uri content://com.cbkii.redmoontv.testing.diagnostics/report
+```
+
+Use the selected package's authority. If an old APK or OEM permission denial prevents automatic export, the ZIP retains that failure; install the updated APK before repeating. The script does not ask you to retype data the app already knows. Missing/denied diagnostics remain warnings, not a passed hardware test.
 
 Exit `0` means a ZIP was produced; its status may be `COMPLETE` or `WARNINGS`. Exit `2` means preflight stopped (transport, device, package or noninteractive guided input). Exit `130` means interrupted collection with partial evidence saved when possible. **COMPLETE never means PWM/native/fade qualification passed.** Review the ZIP before sharing: logs, firmware/package metadata, observations and optional APK may contain information you do not want to disclose. Keep an unmodified original ZIP when preparing a redacted copy.
 
@@ -109,9 +116,9 @@ Use a new labelled ZIP after each relevant action and keep the native original/f
 
 ## 1. Installed read and small probe
 
-Install the chosen diagnostic APK normally (ADB `install -r` is sufficient); match its package in the collector. Open Red Moon TV → Diagnostics. Backlight scheduling and warmth default off. The default APK backend does not request root. Select **Read native backlight** and copy the bounded report. A valid result must identify native level/range, UID/ABI, installed class source/loader and the selected backend/protocol. Older reports use `apk-jni-v2`; newer builds identify `apk-jni-v3/root-pipe-v1` and their selected backend. JNI-load/service/permission failures are diagnostic outcomes, not reasons to enable scheduling.
+Install the updated diagnostic APK normally (ADB `install -r` is sufficient); match its package in the collector. Home starts one read on first connection/new build, with no setter. Use Connect/Read again if needed. Backlight scheduling and warmth default off. The default APK backend does not request root; Try root connection is explicit and may prompt Magisk. The collector extracts native level/range/context, UID/ABI, source/build and first error automatically. Current direct-native builds identify `apk-jni-v4/root-pipe-v1`; older reports identify their earlier protocol. JNI-load/service/permission failures are diagnostic outcomes, not reasons to enable scheduling.
 
-Before writes, note the native TV Settings backlight level and ensure no conflicting controller/dynamic backlight automation. Select the nearby-level test. It captures the original, journals a five-point change, verifies native readback and attempts restoration after 15 seconds. Observe the physical panel and native slider; screenshots do not measure backlight. Leave source/input/picture unchanged during this first probe. Revert is available immediately. Do not mark qualification on numeric readback alone.
+Before writes, check native TV Settings and ensure no conflicting controller/dynamic backlight automation. Select Home → Test & restore. It captures the original, journals a five-point change, verifies native readback and attempts restoration after 15 seconds. Observe the physical panel and native slider; screenshots do not measure backlight. Leave source/input/picture unchanged during this first probe. Restore now is available immediately. Confirm visible test appears only after readback restoration, and is the deliberate operator acknowledgement before scheduling is enabled. Do not confirm from numeric readback alone.
 
 If interrupted, reopen Diagnostics, Read, then explicitly Restore or Keep after checking native TV Settings. The journal survives app process death, but force-stop/power loss cannot guarantee timed rollback. Complete input/HDR context is not yet observable; automatic restoration after a restart is deliberately paused. Native Settings is the manual recovery path. Keep clears the saved original without writing the panel.
 

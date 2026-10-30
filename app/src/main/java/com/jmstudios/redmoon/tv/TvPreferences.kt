@@ -14,11 +14,29 @@ class TvPreferences(private val context: Context) {
     val identityReady: Boolean get() = identity != null
     val signature: String get() = identity?.let { "$it:backend=${if (rootBackend) "root" else "apk"}" } ?: ""
     val rootBackend: Boolean get() = store.getBoolean("root-backend", false)
+    val currentRead: Boolean get() = store.getString("native-read-source", "") == BuildConfig.SOURCE_SHA &&
+        store.getBoolean("native-read-root", !rootBackend) == rootBackend
+    val readState: String get() = if (currentRead) store.getString("native-read-state", "not_checked")!! else "not_checked"
+    val nativeLevel: Int? get() = NativeSnapshot.value?.takeIf { it.root == rootBackend }?.level
+        ?: store.getInt("native-read-level", -1).takeIf { currentRead && it in 0..100 }
+    val writeContextReady: Boolean get() = NativeSnapshot.value?.takeIf { it.root == rootBackend }?.writeContext
+        ?: (currentRead && store.getBoolean("native-write-context", false))
+    fun readStarted() {
+        store.edit().putString("native-read-source", BuildConfig.SOURCE_SHA).putBoolean("native-read-root", rootBackend)
+            .putString("native-read-state", "reading").apply()
+    }
+    fun readFinished() {
+        val value = NativeSnapshot.value?.takeIf { it.root == rootBackend }
+        store.edit().putString("native-read-state", "ready").putInt("native-read-level", value?.level ?: -1)
+            .putBoolean("native-write-context", value?.writeContext == true).putLong("native-read-at", System.currentTimeMillis()).apply()
+    }
     /** Called only by the serial controller after releasing its worker and checking the journal. */
     fun selectBackend(root: Boolean) {
         check(!backlightEnabled)
+        NativeSnapshot.clear()
         check(store.edit().putBoolean("root-backend", root).putBoolean("native-qualified", false)
             .putBoolean("fades-qualified", false).putBoolean("probe-restored", false)
+            .remove("native-read-source").remove("native-read-state").remove("native-read-level")
             .remove("native-diagnostics").remove("first-initialisation-error").remove("root-last-error").commit()) { "Cannot persist backend selection" }
     }
     fun prepareIdentity(ready: () -> Unit = {}) {

@@ -90,7 +90,7 @@ class CollectorTest(unittest.TestCase):
             self.assertEqual(2, collector.main(['-s', 'tv', '--guided']))
             run.assert_not_called()
 
-    def guided_capture(self, answers, interrupted=False):
+    def guided_capture(self, answers, interrupted=False, success=False):
         with tempfile.TemporaryDirectory() as directory:
             commands = []
             def execute(probe, args, timeout=12):
@@ -98,9 +98,13 @@ class CollectorTest(unittest.TestCase):
                 if args == ['get-state']: return 0, 'device', ''
                 if args == ['shell', 'getprop', 'ro.product.device']: return 0, 'xiaoyushan', ''
                 if args[:3] == ['shell', 'pm', 'path']: return 0, 'package:/installed/base.apk', ''
+                if args[:3] == ['shell', 'content', 'query']:
+                    return 0, 'Row: 0 report=' + json.dumps(dict(schema=3, package=probe.package,
+                        source_sha='a'*40, first_initialisation_error='original JNI error',
+                        native_state='ready' if success else 'failed', native_level=66 if success else None,
+                        write_context_ready=success, recovery_pending=False, probe_active=False, probe_restored=success)), ''
                 if args[:4] == ['shell', 'dumpsys', 'activity', 'service']:
-                    return 0, 'SERVICE\n' + json.dumps(dict(schema=3, package=probe.package,
-                        source_sha='a'*40, first_initialisation_error='original JNI error')), ''
+                    return 0, 'No services match', ''
                 return 0, '', ''
             with patch.object(collector.Collector, 'run', execute), patch.object(collector.sys.stdin, 'isatty', return_value=True), patch('builtins.input', side_effect=answers):
                 code = collector.main(['-s', 'tv', '--package', collector.PACKAGES[0], '--guided', '--output', directory])
@@ -116,14 +120,13 @@ class CollectorTest(unittest.TestCase):
                 return manifest, z.namelist()
 
     def test_failed_guided_read_skips_probe_and_keeps_first_error_report(self):
-        manifest, files = self.guided_capture(['APK backend, level 66', 'no', 'Read failed'])
+        manifest, files = self.guided_capture(['', 'Read failed'])
         self.assertIn('read', manifest['app_reports'])
         self.assertTrue(any(n.endswith('/read-report.json') for n in files))
         self.assertFalse(any(n.endswith('/probe-report.json') for n in files))
 
     def test_guided_probe_records_operator_observations_without_sending_writes(self):
-        manifest, files = self.guided_capture(['APK backend, level 66', 'yes', 'yes',
-            'probe observed', 'yes', 'yes', '66 restored', 'No more notes'])
+        manifest, files = self.guided_capture(['', 'yes', '', 'yes', 'No more notes'], success=True)
         self.assertIn('probe', manifest['app_reports'])
         self.assertTrue(any(n.endswith('/observations.json') for n in files))
         self.assertIn('Not inferred', manifest['physical_validation'])
@@ -144,8 +147,10 @@ if a==['get-state']: print('device')
 elif a==['shell','getprop','ro.product.device']: print('xiaoyushan_emT')
 elif a[:3]==['shell','pm','path']:
     if a[3]=='com.cbkii.redmoontv.debug': print('package:/installed/base.apk')
+elif a[:3]==['shell','content','query']:
+    print('Row: 0 report='+json.dumps(dict(schema=3,package='com.cbkii.redmoontv.debug',source_sha='a'*40)))
 elif a[:4]==['shell','dumpsys','activity','service']:
-    print('SERVICE\\n'+json.dumps(dict(schema=3,package='com.cbkii.redmoontv.debug',source_sha='a'*40)))
+    print('No services match')
 elif a[0]=='pull': pathlib.Path(a[2]).write_bytes(b'fixture installed APK')
 elif a[0]=='logcat': print('PRIVATE unrelated\\nRedMoonTV original failure')
 ''')
@@ -159,6 +164,8 @@ elif a[0]=='logcat': print('PRIVATE unrelated\\nRedMoonTV original failure')
                 manifest = json.loads(z.read(next(n for n in names if n.endswith('/manifest.json'))))
                 self.assertEqual('com.cbkii.redmoontv.debug', manifest['package'])
                 self.assertEqual('complete', manifest['collection_status'])
+                self.assertIn('before', manifest['app_reports'])
+                self.assertTrue(any(n.endswith('/before-report.json') for n in names))
                 for name, digest in manifest['files'].items():
                     member = next(n for n in names if n.endswith('/'+name))
                     self.assertEqual(digest, collector.hashlib.sha256(z.read(member)).hexdigest())

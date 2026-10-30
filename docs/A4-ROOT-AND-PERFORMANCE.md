@@ -18,8 +18,8 @@ The ordinary APK worker skips the unused phone-era profile migrations/theme init
 
 ## Backend procedure
 
-1. In Diagnostics, use **Read native backlight** on the default APK backend and copy the report. Missing boot/picture identity may permit a numeric read but must block the probe.
-2. If that fails, pause and Restore or Keep any existing saved session after checking the TV's native Backlight setting. **Select root fallback** does not start root or write the panel. Select Read; allow Magisk when prompted if desired.
+1. Open Home: the updated APK makes one initial read, or use Connect / Read again on the default APK backend. The collector extracts the report automatically. Missing range/boot/picture identity permits a numeric read but blocks the probe.
+2. If that fails, pause and Restore or Keep any existing saved session after checking native TV Settings. Home → Try root connection explicitly selects that backend and reads; allow Magisk if desired. No panel write occurs. Backend selection is also available in Settings.
 3. Record root UID/worker, native range, level, first error/stage and loading time. A retained failure requires explicit Restart worker; no automatic retry after an uncertain setter.
 4. Only after a successful read/context, run the existing five-point, 15-second probe. Observe the real panel and native slider, then restoration. Interrupted rollback still requires explicit recovery; power loss/force-stop cannot promise restoration.
 5. Repeat source/SDR/HDR/manual-adjustment/standby tests for the selected backend. A switch requires fresh native and fade qualification. Never run two build variants as writers.

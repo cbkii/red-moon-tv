@@ -122,9 +122,9 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
     override fun read(): Int {
         val result = call("read")
         nativeContext = result.getString("context")
-        check(result.getInt("minimum", -1) == 0 && result.getInt("maximum", -1) == 100) { "Unsupported native range" }
         val level = result.getInt("level", -1)
         check(level in 0..100) { "Invalid native readback" }
+        NativeSnapshot.record(level, !nativeContext.isNullOrBlank(), false)
         return level
     }
     override fun claim() { call("claim") }

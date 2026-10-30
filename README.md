@@ -3,6 +3,7 @@
 Native backlight control for the Toshiba/Hisense HiSmartTV A4, with a D-pad interface, strict Day/Dusk/Dim schedules and independently scheduled warmth. Both schedules start disabled; native control and repeated-write fades require physical qualification.
 
 - [A4 operation, diagnostics and acceptance](docs/A4-VALIDATION.md)
+- [31 October device results and corrective work](docs/A4-DEVICE-RESULTS-2026-10-31.md)
 - [TESTING, signing and release workflows](docs/RELEASES.md)
 - [Investigated implementation plan](docs/A4-BACKLIGHT-PLAN.md)
 

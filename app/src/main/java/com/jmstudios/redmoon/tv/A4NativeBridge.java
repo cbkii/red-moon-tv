@@ -9,20 +9,17 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import dalvik.system.PathClassLoader;
 import java.io.File;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
 /** Loads the installed vendor bindings in an APK native-library namespace; no vendor redistribution. */
 public final class A4NativeBridge {
-    public static final String PROTOCOL = "installed-jni-v3";
-    private static final String KEY = "g_disp__disp_back_light";
+    public static final String PROTOCOL = "installed-jni-v4";
     private static Class<?> installedApi;
     private static String installedSource;
     public static volatile String initialisationStage = "not started";
     private final String bootIdentity;
-    private final Object config;
-    private final Method getter, setter;
+    private final VendorBacklightApi nativeApi;
     private final String bindingSource;
     private final long loadedAt;
     public final int minimum, maximum;
@@ -40,17 +37,9 @@ public final class A4NativeBridge {
         long began = SystemClock.elapsedRealtime();
         Class<?> api = resolveApi(dexPath);
         bindingSource = installedSource;
-        stage("getInstance");
-        config = api.getMethod("getInstance").invoke(null);
-        stage("resolve getter/setter signatures");
-        getter = api.getMethod("getConfigValue", String.class);
-        setter = api.getMethod("setConfigValue", String.class, int.class);
-        stage("native getMinMaxConfigValue");
-        int packed = (Integer) api.getMethod("getMinMaxConfigValue", String.class).invoke(config, KEY);
-        stage("unpack native range");
-        minimum = (Integer) api.getMethod("getMinValue", int.class).invoke(null, packed);
-        maximum = (Integer) api.getMethod("getMaxValue", int.class).invoke(null, packed);
-        if (minimum != 0 || maximum != 100) throw new IllegalStateException("Unexpected vendor range " + minimum + ".." + maximum);
+        stage("resolve installed TVNative signatures and range selectors");
+        nativeApi = new VendorBacklightApi(api);
+        minimum = nativeApi.minimum; maximum = nativeApi.maximum;
         loadedAt = SystemClock.elapsedRealtime() - began;
         stage("ready");
     }
@@ -78,12 +67,12 @@ public final class A4NativeBridge {
         Class<?> api;
         String source;
         try {
-            api = Class.forName("com.mediatek.twoworlds.tv.MtkTvConfig", false, ClassLoader.getSystemClassLoader());
+            api = Class.forName("com.mediatek.twoworlds.tv.TVNative", false, ClassLoader.getSystemClassLoader());
             source = "system/shared classpath";
         } catch (ClassNotFoundException absent) {
             // The directory is a search path, not a linker-namespace or permission bypass.
             ClassLoader loader = new PathClassLoader(dexPath, "/vendor/lib:/system/lib", ClassLoader.getSystemClassLoader());
-            api = Class.forName("com.mediatek.twoworlds.tv.MtkTvConfig", false, loader);
+            api = Class.forName("com.mediatek.twoworlds.tv.TVNative", false, loader);
             source = dexPath;
         }
         installedSource = source;
@@ -91,26 +80,23 @@ public final class A4NativeBridge {
         return api;
     }
     public int read() throws Exception {
-        int value = (Integer) getter.invoke(config, KEY);
-        if (value < minimum || value > maximum) throw new IllegalStateException("Native getter status/value: " + value);
-        return value;
+        return nativeApi.read();
     }
     public void write(int target) throws Exception {
         if (target < 0 || target > 100) throw new IllegalArgumentException("Invalid native level");
-        int result = (Integer) setter.invoke(config, KEY, target);
-        if (result != 0) throw new IllegalStateException("Native setter status " + result + "; outcome requires readback");
-        if (read() != target) throw new IllegalStateException("Native readback mismatch; no automatic retry");
+        nativeApi.write(target);
     }
     public String context() throws Exception {
-        int picture = (Integer) getter.invoke(config, "g_video__picture_mode");
+        if (!nativeApi.hasWriteRange()) throw new IllegalStateException("Native range unverified (" + nativeApi.rangeSource + "); read only");
+        int picture = nativeApi.picture();
         if (picture < 0) throw new IllegalStateException("Picture context unavailable");
         if (bootIdentity == null) throw new IllegalStateException("Boot context unavailable; read allowed, writes blocked");
         return Build.FINGERPRINT + ":boot:" + bootIdentity + ":picture=" + picture;
     }
     public String diagnostics() {
         return PROTOCOL + "; uid=" + Process.myUid() + "; abi=" + android.text.TextUtils.join(",", Build.SUPPORTED_ABIS)
-            + "; source=" + bindingSource + "; loader=" + config.getClass().getClassLoader()
+            + "; source=" + bindingSource + "; loader=" + installedApi.getClassLoader()
             + "; JNI=/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so; range=" + minimum + ".." + maximum
-            + "; loadMs=" + loadedAt + "; context=boot/picture only; input/HDR identity unqualified";
+            + "; rangeQuery=" + nativeApi.rangeSource + "; loadMs=" + loadedAt + "; context=boot/picture only; input/HDR identity unqualified";
     }
 }

@@ -69,6 +69,7 @@ class TvDisplayService : Service() {
         prefs.prepareIdentity { if (!destroyed) reconcile(false) }
         controller = newController()
         recoveryRequired = RecoveryJournal.exists(this)
+        prefs.store.edit().putBoolean("probe-active", false).apply()
         if (recoveryRequired) {
             prefs.backlightEnabled = false
             status("Interrupted native session: read and explicitly Restore or Keep in Diagnostics. Automatic writes paused; input/HDR context is unqualified.")
@@ -88,22 +89,22 @@ class TvDisplayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val command = intent?.getStringExtra("command") ?: "reconcile"
         when (command) {
-            "use_root", "use_apk" -> {
+            "use_root", "use_apk", "use_root_read", "use_apk_read" -> {
                 if (prefs.backlightEnabled || preview || overridePhase != null) status("Pause native scheduling/preview before changing backend")
                 else submit {
                     check(controller.pendingRecovery() == null) { "Restore or Keep the saved session before changing backend" }
                     controller.close()
-                    prefs.selectBackend(command == "use_root")
+                    prefs.selectBackend(command.startsWith("use_root"))
                     controller = newController()
                     status("${if (prefs.rootBackend) "Root" else "APK"} backend selected. Read first; physical qualification must be repeated.")
+                    if (command.endsWith("_read")) readNative()
                 }
             }
             "read", "read_restart" -> {
                 if (command == "read_restart" && (prefs.backlightEnabled || preview)) status("Pause scheduling/preview before restarting the native worker")
                 else submit {
                     if (command == "read_restart") controller.close()
-                    status("Reading native backlight via ${if (prefs.rootBackend) "root (Magisk may prompt)" else "APK worker"}; this read does not write the panel")
-                    status("Confirmed native backlight: ${controller.read()} / 100.\n${prefs.store.getString("native-diagnostics", "")}")
+                    readNative()
                 }
             }
             "probe" -> probe()
@@ -151,7 +152,15 @@ class TvDisplayService : Service() {
         Log.i("RedMoonTV", message)
         sendBroadcast(Intent(STATUS).setPackage(packageName).putExtra("status", message))
     }
+    private fun readNative() {
+        prefs.readStarted()
+        status("Reading native backlight via ${if (prefs.rootBackend) "root (Magisk may prompt)" else "APK worker"}; no panel write")
+        val level = controller.read()
+        prefs.readFinished()
+        status("Native backlight $level / 100. ${if (prefs.writeContextReady) "Ready for a visible test." else "Read only: range or picture/boot context is unavailable."}")
+    }
     private fun fail(error: Exception) {
+        prefs.store.edit().putString("native-read-state", "failed").putBoolean("probe-active", false).apply()
         cancelTransition()
         val edit = prefs.store.edit().putBoolean("native-blocked", true)
         if (error is ExternalBacklightChange) {
@@ -309,6 +318,7 @@ class TvDisplayService : Service() {
         cancelTransition()
         preview = true
         prefs.store.edit().putBoolean("probe-restored", false).apply()
+        prefs.store.edit().putBoolean("probe-active", true).apply()
         submit {
             controller.release()
             // A previous schedule's confirmed saved original must be explicitly kept/restored.
@@ -331,11 +341,12 @@ class TvDisplayService : Service() {
             val kind = controller.pendingRecovery()?.kind
             try {
                 if (controller.restore()) {
+                    prefs.readFinished()
                     if (kind == "probe") prefs.store.edit().putBoolean("probe-restored", true).putString("probe-signature", prefs.signature).apply()
                     recoveryRequired = false; prefs.store.edit().putBoolean("native-blocked", false).remove("manual-hold-until").apply()
                     status("Native original restored and read back. Confirm visible panel response before qualification.")
                 } else status("No saved original to restore")
-            } finally { preview = false }
+            } finally { preview = false; prefs.store.edit().putBoolean("probe-active", false).apply() }
         }
     }
     override fun onDestroy() {
