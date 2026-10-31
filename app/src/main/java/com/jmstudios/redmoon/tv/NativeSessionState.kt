@@ -2,6 +2,9 @@
 package com.jmstudios.redmoon.tv
 
 enum class NativeSessionState { IDLE, LIVE_SCHEDULE, PAUSED, WRITING, MANUAL_HOLD, PROBE, RECOVERY }
+/** A temporary automation target owns the worker even when the saved schedule is off. */
+fun nativeWorkerBusy(scheduled: Boolean, probe: Boolean, phaseOverride: Boolean, temporary: Boolean) =
+    scheduled || probe || phaseOverride || temporary
 fun nativeSessionState(record: RecoveryRecord?, liveSession: String?, enabled: Boolean,
                        manualHold: Boolean, probe: Boolean, inFlight: Boolean = false): NativeSessionState = when {
     probe && liveSession != null -> NativeSessionState.PROBE

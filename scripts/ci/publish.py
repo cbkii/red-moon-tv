@@ -53,7 +53,7 @@ def complete_testing_groups(assets):
 
 
 def publish(directory, repo, expected_sha, state, tag):
-    if state != 'draft': raise ValueError('Only draft preparation is allowed; use promote.py after exact-artifact acceptance')
+    if state not in ('draft', 'prerelease'): raise ValueError('Stable publication requires promote.py and exact-artifact acceptance')
     files = sorted(directory.iterdir())
     infos = [p for p in files if p.name.startswith('BUILD_INFO-') and p.suffix == '.json']
     if len(infos) != 1 or any(not p.is_file() or p.is_symlink() for p in files):
@@ -78,6 +78,12 @@ def publish(directory, repo, expected_sha, state, tag):
         covered.add(name)
     if covered != {p.name for p in files if p != sumfile}: raise ValueError('Incomplete checksum coverage')
     testing = info['channel'] == 'testing'
+    if testing and state != 'draft': raise ValueError('Permanent TESTING snapshots remain private drafts')
+    if state == 'prerelease':
+        default = api(f'repos/{repo}')['default_branch']
+        from urllib.parse import quote
+        if api(f'repos/{repo}/commits/{quote(default, safe="")}')['sha'] != expected_sha:
+            raise ValueError('Prerelease source must be the current default-branch head')
     marker = MARKER if testing else '<!-- red-moon-tv-release-managed -->'
     if testing:
         tag = '000-testing-only'
@@ -101,6 +107,21 @@ def publish(directory, repo, expected_sha, state, tag):
     if len(matches) > 1: raise ValueError('Multiple releases use the requested tag')
     notes = marker + '\n\nNative A4 backlight controller with independent warmth scheduling.\n\n'
     notes += 'Physical A4 native-control, repeated-write and playback acceptance must be recorded separately from CI.\n'
+    if state == 'prerelease':
+        notes += ('\n## v' + info['version_name'] + ' prerelease\n\n'
+            '- Native A4 backlight control, Day/Dusk/Dim caps and independently scheduled warmth.\n'
+            '- Direct Boot, standby/process recovery, bounded effect checks and optional root transport.\n'
+            '- Paired tvQuickActions shortcuts, temporary targets, snooze and conditional status.\n'
+            '- ADB collectors and lifecycle/failure/automation validation scripts in the corresponding source.\n\n'
+            '**Qualification:** this exact stable-package APK has not completed physical A4 acceptance. '
+            'Both schedules start disabled; native writes require the restored probe acknowledgement, '
+            'and repeated-write fades require a separate persistence check. Playback/HDMI/tuner/HDR '
+            'warmth coverage, boot timing and runtime overhead remain device tests.\n\n'
+            '**Install:** package `com.cbkii.redmoontv`, versionCode ' + str(info['version_code']) +
+            '. TESTING/debug are separate packages; pause other variants before qualification. '
+            'Grant overlay permission for warmth and select root explicitly only if needed.\n\n'
+            '**Recovery:** Pause/Warmth Off, conditional Restore or native TV Picture Settings. '
+            'Android downgrade restrictions apply; use a forward-version repair for an installed update.\n')
     if matches:
         release = matches[0]
         if not release['draft'] or marker not in (release.get('body') or ''):
@@ -154,8 +175,11 @@ def publish(directory, repo, expected_sha, state, tag):
             notes += f'- {snapshot}: `{asset["name"]}` · `{metadata["name"]}`\n'
     else:
         notes += f'\nSource: {expected_sha}\n\nAPK SHA-256: {info["apk_sha256"]}\n'
+        notes += f'\n[ADB validation](https://github.com/{repo}/blob/{expected_sha}/docs/A4-VALIDATION.md) · [Startup/continuity](https://github.com/{repo}/blob/{expected_sha}/docs/A4-STARTUP-CONTINUITY.md) · [tvQuickActions](https://github.com/{repo}/blob/{expected_sha}/docs/TVQUICKACTIONS.md)\n'
+    if state == 'prerelease' and api(f'repos/{repo}/commits/{quote(default, safe="")}')['sha'] != expected_sha:
+        raise ValueError('Default branch changed during qualification; candidate remains unpublished')
     final = api(f'repos/{repo}/releases/{release["id"]}', 'PATCH', dict(tag_name=tag, target_commitish=expected_sha, name=title, body=notes, draft=state == 'draft', prerelease=state == 'prerelease', make_latest='false'))
-    if final['draft'] != (state == 'draft') or final['tag_name'] != tag: raise ValueError('Release state verification failed')
+    if final['draft'] != (state == 'draft') or final.get('prerelease', False) != (state == 'prerelease') or final['tag_name'] != tag: raise ValueError('Release state verification failed')
     print(final['html_url'])
 
 
@@ -163,7 +187,7 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('--directory', type=Path, required=True)
     p.add_argument('--expected-sha', required=True)
-    p.add_argument('--state', choices=('draft',), default='draft')
+    p.add_argument('--state', choices=('draft', 'prerelease'), default='draft')
     p.add_argument('--tag', default='000-testing-only')
     a = p.parse_args()
     publish(a.directory, os.environ['GITHUB_REPOSITORY'], a.expected_sha, a.state, a.tag)

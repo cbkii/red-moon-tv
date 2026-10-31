@@ -3,19 +3,19 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: 'APK versionName and tag suffix, for example 4.0.1-tv.1'
+        description: 'APK versionName and tag suffix, for example 106'
         type: string
         required: true
-        default: 4.0.1-tv.1
+        default: '106'
       version_code:
         description: 'Monotonically increasing stable versionCode; TESTING has its own package'
         type: string
         required: true
-        default: '40'
+        default: '106'
       operation:
-        description: Prepare a signed draft, or promote its unchanged accepted APK
+        description: Prepare a signed draft, publish a prerelease, or promote accepted stable bytes
         type: choice
-        options: [prepare, promote]
+        options: [prepare, prerelease, promote]
         default: prepare
       release_id:
         description: Existing managed draft ID (promote only)
@@ -23,6 +23,8 @@ on:
       acceptance_json:
         description: Completed exact-APK acceptance JSON (promote only; see docs/A4-ACCEPTANCE.json)
         type: string
+  issue_comment:
+    types: [created]
 permissions:
   contents: read
 concurrency:
@@ -30,11 +32,17 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    if: inputs.operation == 'prepare'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.operation != 'promote') ||
+      (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/prerelease v') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       source_sha: ${{ steps.resolve.outputs.source_sha }}
+      version_name: ${{ steps.resolve.outputs.version_name }}
+      version_code: ${{ steps.resolve.outputs.version_code }}
+      state: ${{ steps.resolve.outputs.state }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -43,17 +51,7 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          VERSION_NAME: ${{ inputs.version_name }}
-          VERSION_CODE: ${{ inputs.version_code }}
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH"
-          sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEFAULT_BRANCH" --jq .sha)"
-          test "$sha" = "$GITHUB_SHA"
-          mkdir release-input
-          python3 scripts/ci/envelope.py --sha "$sha" --channel release --version-name "$VERSION_NAME" --version-code "$VERSION_CODE" --output release-input/BUILD_INFO.json
-          echo "source_sha=$sha" >> "$GITHUB_OUTPUT"
+        run: python3 scripts/ci/resolve_release.py
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           distribution: temurin
@@ -62,10 +60,11 @@ jobs:
         run: 'env JAVA_HOME="$JAVA_HOME_17_X64" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-32" "build-tools;32.0.0"'
       - name: Build and test exact release without signing secrets
         env:
-          VERSION_NAME: ${{ inputs.version_name }}
-          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ steps.resolve.outputs.version_name }}
+          VERSION_CODE: ${{ steps.resolve.outputs.version_code }}
         run: |
           set -euo pipefail
+          python3 -m unittest discover -s scripts/ci -p 'test_*.py'
           ./gradlew --no-daemon --stacktrace -PVERSION_NAME="$VERSION_NAME" -PVERSION_CODE="$VERSION_CODE" :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
           cp app/build/outputs/apk/release/app-release-unsigned.apk release-input/app-unsigned.apk
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -110,9 +109,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
-          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_NAME: ${{ needs.build.outputs.version_name }}
+          RELEASE_STATE: ${{ needs.build.outputs.state }}
 
-        run: python3 scripts/ci/publish.py --directory qualified --expected-sha "$SOURCE_SHA" --tag "v$VERSION_NAME" --state draft
+        run: python3 scripts/ci/publish.py --directory qualified --expected-sha "$SOURCE_SHA" --tag "v$VERSION_NAME" --state "$RELEASE_STATE"
   promote:
     if: inputs.operation == 'promote'
     runs-on: ubuntu-24.04

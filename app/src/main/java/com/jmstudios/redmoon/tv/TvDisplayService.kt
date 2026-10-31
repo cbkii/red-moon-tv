@@ -207,7 +207,7 @@ class TvDisplayService : Service() {
                 if (retryTask == null) reconcile(false, startupCatchUp(catchUp, needsNativeStart, prefs.backlightEnabled))
             }
             "use_root", "use_apk", "use_root_read", "use_apk_read" -> {
-                if (prefs.backlightEnabled || preview || overridePhase != null || automation.temporary("brightness") != null) status("Pause native scheduling/preview before changing backend")
+                if (nativeWorkerBusy(prefs.backlightEnabled, preview, overridePhase != null, automation.temporary("brightness") != null)) status("Pause native scheduling/preview before changing backend")
                 else submit {
                     check(controller.pendingRecovery() == null) { "Restore or Keep the saved session before changing backend" }
                     controller.close()
@@ -220,7 +220,7 @@ class TvDisplayService : Service() {
             "read", "read_restart" -> {
                 cancelRetry(); readiness.reset()
                 prefs.store.edit().remove("access-required").apply()
-                if (command == "read_restart" && (prefs.backlightEnabled || preview)) status("Pause scheduling/preview before restarting the native worker")
+                if (command == "read_restart" && nativeWorkerBusy(prefs.backlightEnabled, preview, overridePhase != null, automation.temporary("brightness") != null)) status("Pause scheduling/preview/automation before restarting the native worker")
                 else submit("read") {
                     if (command == "read_restart") controller.close()
                     readNative()
