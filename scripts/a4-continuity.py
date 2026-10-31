@@ -60,7 +60,20 @@ class Continuity(base.Validator):
             time.sleep(2)
         raise RuntimeError('ADB did not reconnect to the expected boot; evidence retained')
 
-    def wait_running(self, label, seconds=360):
+    @staticmethod
+    def effects_ready(report):
+        runtime=report.get('runtime', {})
+        if report.get('backlight_enabled') and not (runtime.get('brightness_state')=='ACTIVE' and
+                report.get('scheduled_level_applied') and report.get('sample_current_process') and
+                isinstance(report.get('sample_age_ms'),(int,float)) and 0<=report['sample_age_ms']<120000):
+            return False
+        if report.get('warmth_enabled'):
+            state=runtime.get('warmth_state')
+            if state=='ACTIVE':return runtime.get('overlay_attached') is True and runtime.get('overlay_strength',0)>0
+            if state!='DISABLED' or runtime.get('overlay_strength',0)!=0:return False
+        return True
+
+    def wait_running(self, label, seconds=360, effects=True):
         # Observe ActivityManager first. Provider queries themselves can start the process.
         began = time.monotonic()
         deadline = began + seconds
@@ -68,7 +81,7 @@ class Continuity(base.Validator):
             code, dump, _ = self.run(['shell', 'dumpsys', 'activity', 'services', self.package], timeout=10)
             if code == 0 and 'TvDisplayService' in dump and re.search(r'isForeground=true', dump):
                 report = self.report(label)
-                if report.get('service_running') and report.get('runtime', {}).get('operation') == 'idle':
+                if report.get('service_running') and report.get('runtime', {}).get('operation') == 'idle' and (not effects or self.effects_ready(report)):
                     self.results.append({'test': label, 'software': 'passed', 'physical': 'unverified',
                                          'recovery_seconds': round(time.monotonic() - began, 3),
                                          'session': report.get('runtime', {}).get('session')})
@@ -113,6 +126,7 @@ class Continuity(base.Validator):
             self.expect('standby-no-writes', 'metrics.writes', writes)
             self.checked(['shell', 'input', 'keyevent', '224']); self.wait(5, 'wake')
             self.expect('wake-state', 'runtime.screen_on', True)
+            self.wait_running('wake-effects-ready',90)
         elif scenario == 'restart':
             self.kill_named(); self.wait_running('process-recovery')
         elif scenario == 'worker':
@@ -120,6 +134,7 @@ class Continuity(base.Validator):
             self.wait(70, 'worker-recovery')
             self.expect('worker-still-enabled', 'backlight_enabled', True)
             self.expect('worker-no-pending', 'recovery_pending', False)
+            self.wait_running('worker-effects-ready',90)
         elif scenario == 'overlay':
             self.command('fault', {'fault': 'detach_overlay'})
             self.expect('overlay-detached', 'runtime.overlay_attached', False)
@@ -152,7 +167,11 @@ class Continuity(base.Validator):
             if apk is None: raise RuntimeError('--upgrade-apk is required')
             before = self.report('upgrade-before')
             self.checked(['install', '-r', str(apk.resolve())], timeout=90)
-            after = self.wait_running('package-replaced')
+            after = self.wait_running('package-replaced',effects=False)
+            if before.get('native_compatibility')==after.get('native_compatibility'):
+                self.wait_running('compatible-upgrade-effects',90)
+            else:
+                self.expect('incompatible-upgrade-needs-qualification','native_acknowledged',False)
             self.expect('upgrade-user-intent', 'backlight_enabled', before['backlight_enabled'])
             self.results.append({'test':'upgrade-identity', 'before':before.get('native_compatibility'),
                                  'after':after.get('native_compatibility'), 'software':'recorded', 'physical':'unverified'})
@@ -182,7 +201,8 @@ class Continuity(base.Validator):
 
     def supervisor(self, operation):
         if operation == 'status':
-            return self.root(['ls', '-l', MODULE + '/module.prop', MODULE + '/selected-package'])
+            script='test -f '+shlex.quote(MODULE+'/module.prop')+' || exit 1; if test -f '+shlex.quote(MODULE+'/selected-package')+'; then cat '+shlex.quote(MODULE+'/selected-package')+'; else printf inactive; fi'
+            return self.root(['sh','-c',script])
         if operation == 'disable':
             # Config is fixed module state, never shell-sourced. The running loop checks it.
             return self.root(['rm', '-f', MODULE + '/selected-package'])

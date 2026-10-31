@@ -101,3 +101,24 @@ else:print('unavailable')
                 for name,sha in manifest['sha256'].items():self.assertEqual(sha,hashlib.sha256(z.read(name)).hexdigest())
         with tempfile.TemporaryDirectory() as d,patch.object(pack.subprocess,'check_output',side_effect=['a'*40,' M source']):
             with self.assertRaisesRegex(RuntimeError,'Commit all source'):pack.package(ROOT,pathlib.Path(d))
+
+    def test_service_presence_and_cached_levels_cannot_pass_effect_recovery(self):
+        ready={'backlight_enabled':True,'warmth_enabled':True,'scheduled_level_applied':True,
+               'sample_current_process':True,'sample_age_ms':100,
+               'runtime':{'brightness_state':'ACTIVE','warmth_state':'ACTIVE','overlay_attached':True,'overlay_strength':35}}
+        self.assertTrue(continuity.Continuity.effects_ready(ready))
+        for key,value in [('scheduled_level_applied',False),('sample_current_process',False),('sample_age_ms',None),('sample_age_ms',120000)]:
+            wrong=dict(ready);wrong[key]=value;self.assertFalse(continuity.Continuity.effects_ready(wrong))
+        for key,value in [('brightness_state','STARTING'),('warmth_state','ACCESS_REQUIRED'),('overlay_attached',False)]:
+            wrong=dict(ready,runtime=dict(ready['runtime'],**{key:value}));self.assertFalse(continuity.Continuity.effects_ready(wrong))
+        day=dict(ready,runtime=dict(ready['runtime'],warmth_state='DISABLED',overlay_strength=0,overlay_attached=False))
+        self.assertTrue(continuity.Continuity.effects_ready(day))
+
+    def test_inactive_supervisor_status_is_a_read_only_success(self):
+        with tempfile.TemporaryDirectory() as d:
+            r=continuity.Continuity('tv',pathlib.Path(d),continuity.base.collect.PACKAGES[0]);r.allow_root=True
+            with patch.object(r,'root',return_value='inactive') as root:
+                self.assertEqual('inactive',r.supervisor('status'))
+                words=root.call_args.args[0]
+                self.assertEqual(['sh','-c'],words[:2]);self.assertIn('printf inactive',words[2])
+                self.assertNotIn('rm ',words[2]);self.assertNotIn('> ',words[2])
