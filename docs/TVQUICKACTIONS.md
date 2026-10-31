@@ -61,7 +61,7 @@ The phase, set, adjust and preset commands additionally accept:
 - string `expiry=next_boundary` (default), `duration`, or `until_resumed`.
 - integer `duration_seconds=1..86400`, required only with `expiry=duration`.
 
-`cancel_transition` always expires at the next relevant boundary; `snooze` always uses the supplied duration. Next boundary means the brightness phase clock for brightness/linked warmth, or the independent warmth window boundary when unlinked. Overrides and absolute expiry persist through process recreation and standby. Wake catches up; missed fade steps are never replayed.
+`cancel_transition` always expires at the next relevant boundary; `snooze` always uses the supplied duration. Next boundary means the brightness phase clock for brightness/linked warmth, or the independent warmth window boundary when unlinked. On a cold start, native requests wait up to ten seconds for the installed-vendor identity check; failure becomes an explicit rejection. Overrides and absolute expiry persist through process recreation and standby. Wake catches up; missed fade steps are never replayed.
 
 Temporary actions do not rewrite saved phase values, schedule times or enable flags. An action may create temporary output while the saved schedule is disabled; expiry restores saved intent, not a silently enabled schedule. The native original remains available through Diagnostics → Restore until explicit Keep, an established external adjustment or context/boot policy retires ownership. Never automatically restore into another input/HDR context. Pending uncertain writes always require recovery.
 

@@ -52,6 +52,7 @@ class TvDisplayService : Service() {
     private var warmthRequest: String? = null
     private var warmthFadeOverride: Int? = null
     private var resumeRequest: String? = null
+    private val identityWaits = mutableSetOf<String>()
     private var overlay: TvWarmthOverlay? = null
     private var warmthTask: Runnable? = null
     private var warmthTarget: WarmthState? = null
@@ -258,7 +259,7 @@ class TvDisplayService : Service() {
                     reconcile(true)
                 } else status("Native qualification/recovery required before scheduling")
             }
-            "warmth" -> warmthOnly()
+            "warmth" -> { finishWarmth("cancelled", "Warmth changed in controls"); automation.temporary("warmth", null); warmthOnly() }
             "warmth_off" -> { finishWarmth("cancelled", "Warmth disabled"); automation.temporary("warmth", null); prefs.warmthEnabled = false; warmthOnly(true); TvContinuity.arm(this) }
             else -> reconcile(command != "boundary")
         }
@@ -284,6 +285,22 @@ class TvDisplayService : Service() {
             val r = AutomationContract.parse(AutomationState.data(extras), id)
             if (automation.find(id)?.optString("state") !in AutomationResult.active) return
             check(automation.authorised(extras.getString("token"))) { "Integration disabled or token revoked" }
+            if (r.affects("brightness") && r.command !in setOf("brightness_pause", "snooze", "cancel_transition", "show_status", "open_controls", "reconcile") && !prefs.identityReady) {
+                if (!identityWaits.add(id)) return
+                val timeout = Runnable {
+                    if (identityWaits.remove(id)) {
+                        automation.result(id, "dispatch", "rejected", "Vendor identity unavailable after 10 seconds")
+                        stopIfIdle()
+                    }
+                }
+                main.postDelayed(timeout, 10000)
+                prefs.prepareIdentity {
+                    if (!destroyed && prefs.identityReady && identityWaits.remove(id)) {
+                        main.removeCallbacks(timeout); handleAutomation(intent)
+                    }
+                }
+                return
+            }
             when (r.command) {
                 "show_status" -> {
                     automation.start(r, listOf("control"))
@@ -350,10 +367,10 @@ class TvDisplayService : Service() {
                     automation.result(r.id, "brightness", "cancelled", "Hold superseded"); return@submit
                 }
                 try {
-                controller.release()
-                check(controller.pendingRecovery()?.pending == null) { "Uncertain write requires recovery" }
-                // Retain confirmed restoration evidence; pausing never means Keep.
-                automation.result(r.id, "brightness", "applied", "Current native value retained; no setter")
+                    controller.release()
+                    check(controller.pendingRecovery()?.pending == null) { "Uncertain write requires recovery" }
+                    // Retain confirmed restoration evidence; pausing never means Keep.
+                    automation.result(r.id, "brightness", "applied", "Current native value retained; no setter")
                 } catch (error: Exception) {
                     automation.result(r.id, "brightness", "failed", "Cleanup requires recovery"); throw error
                 }
@@ -649,14 +666,16 @@ class TvDisplayService : Service() {
     }
     private fun stopIfIdle() {
         if (::prefs.isInitialized) TvContinuity.arm(this)
-        if (!destroyed && warmthRequest == null && !automation.pending() && queue.count == 0 && !prefs.backlightEnabled && !prefs.warmthEnabled && overridePhase == null && !preview && (overlay == null || overlay!!.profile.isOff)) stopSelf()
+        if (!destroyed && identityWaits.isEmpty() && warmthRequest == null && !automation.pending() && queue.count == 0 && !prefs.backlightEnabled && !prefs.warmthEnabled && overridePhase == null && !preview && (overlay == null || overlay!!.profile.isOff)) stopSelf()
     }
     private fun reconcile(force: Boolean, bootstrap: Boolean = false) {
         val policy = try { prefs.policy() } catch (e: IllegalArgumentException) { status("Invalid schedule: ${e.message}"); return }
         val now = Instant.now()
+        val expiringBrightness = automation.temporary("brightness")
         val expired = automation.expire(now.toEpochMilli())
         val expiredTemporary = "brightness" in expired
         if (expiredTemporary) {
+            if (expiringBrightness?.optString("kind") == "hold" && prefs.backlightEnabled) rebaseAfterExplicitResume = true
             cancelTransition()
             submit("automation-expiry", true) {
                 controller.release()
@@ -713,7 +732,7 @@ class TvDisplayService : Service() {
             controller.release()
             if (releaseManual || rebaseAfterExplicitResume) {
                 check(controller.pendingRecovery()?.pending == null) { "Uncertain write still requires explicit recovery" }
-                controller.discard(); rebaseAfterExplicitResume = false
+                controller.retireConfirmed(); rebaseAfterExplicitResume = false
                 prefs.store.edit().remove("manual-hold-until").apply()
             }
             if (setting.fadeSeconds > 0 && !prefs.fadesQualified) {
@@ -886,6 +905,7 @@ class TvDisplayService : Service() {
         }
     }
     override fun onDestroy() {
+        identityWaits.forEach { automation.result(it, "dispatch", "cancelled", "Service stopped while checking vendor identity") }; identityWaits.clear()
         finishWarmth("cancelled", "Service stopped")
         active = false; liveSession = null; instance = null
         destroyed = true; cancelTransition(); cancelRetry()

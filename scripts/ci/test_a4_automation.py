@@ -84,3 +84,48 @@ class AutomationTests(unittest.TestCase):
                 self.assertEqual('result=private', run.checked(['shell', '--es', 'token', 'private']))
             combined = ''.join(p.read_text() for p in pathlib.Path(d).iterdir())
             self.assertNotIn('private', combined)
+
+    def test_real_cli_contract_suite_uses_exact_broadcasts_and_redacts_archive(self):
+        import os
+        import zipfile
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d); adb = root / 'adb'
+            adb.write_text('#!' + sys.executable + '\n' + '''
+import sys,os,pathlib,json,shlex
+args=sys.argv[3:];root=pathlib.Path(os.environ['FAKE_ROOT']);state=root/'ledger.json'
+rows=json.loads(state.read_text()) if state.exists() else []
+if args==['get-state']:print('device');sys.exit()
+w=shlex.split(args[1]) if len(args)==2 and args[0]=='shell' else args[1:]
+if w==['getprop','ro.product.device']:print('xiaoyushan');sys.exit()
+if w[:2]==['pm','path']:print('package:/installed/base.apk');sys.exit()
+if args and args[0]=='pull':pathlib.Path(args[-1]).write_bytes(b'fake installed apk');sys.exit()
+if w[:2]==['content','query']:
+ uri=w[w.index('--uri')+1]
+ report={'api_version':1,'enabled':True,'brightness':None,'warmth':None,'results':rows} if uri.endswith('/automation') else {'schema':5,'package':'com.cbkii.redmoontv.testing','runtime':{'pending':0}}
+ print('Row: 0 report='+json.dumps(report));sys.exit()
+if w[:2]==['content','call'] and w[w.index('--method')+1]=='automation_pairing':
+ print('Bundle[{result='+json.dumps({'enabled':True,'token':'private-token'})+'}]');sys.exit()
+if w[:2]==['am','broadcast'] or (w[:2]==['content','call'] and 'automation' in w):
+ data={}
+ if w[0]=='am':
+  for i,v in enumerate(w[:-2]):
+   if v in ('--es','--ei','--ez'):data[w[i+1]]=int(w[i+2]) if v=='--ei' else (w[i+2]=='true' if v=='--ez' else w[i+2])
+ else:data=json.loads(w[w.index('--arg')+1])
+ old=next((r for r in rows if r['request_id']==data['request_id']),None)
+ rejected=data.get('token')!='private-token' or data.get('phase')=='INVALID' or isinstance(data.get('value'),str) or 'backend' in data or (old and old['command']!=data['command'])
+ if rejected:print('Broadcast completed: result=0, data="rejected"');sys.exit()
+ if not old:
+  old={'request_id':data['request_id'],'command':data['command'],'state':'applied','parts':{'control':{'state':'applied'}}};rows.append(old);state.write_text(json.dumps(rows))
+ print('Broadcast completed: result=-1' if w[0]=='am' else 'Bundle[{result='+json.dumps(old)+'}]');sys.exit()
+print('unavailable')
+''')
+            adb.chmod(0o755)
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], FAKE_ROOT=d)
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/a4-automation.py'), '-s', 'tv', '--execute',
+                                     '--suite', 'contracts', '--output', d], capture_output=True, text=True, env=env, timeout=20)
+            self.assertEqual(0, result.returncode, result.stderr)
+            with zipfile.ZipFile(next(root.glob('*.zip'))) as z:
+                files = [z.read(n) for n in z.namelist() if not n.endswith('.apk')]
+                self.assertNotIn(b'private-token', b'\n'.join(files))
+                self.assertTrue(any(n.endswith('/results.json') for n in z.namelist()))
+            self.assertNotIn('private-token', result.stdout + result.stderr)

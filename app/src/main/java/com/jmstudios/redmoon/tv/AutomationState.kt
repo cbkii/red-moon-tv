@@ -63,6 +63,11 @@ class AutomationState(private val context: Context) {
             val row = all.getJSONObject(i); if (row.optString("request_id") != id) continue
             if (row.optString("state") !in active) return@synchronized
             val parts = row.getJSONObject("parts")
+            if (part == "dispatch") parts.keys().asSequence().toList().forEach { key ->
+                val pending = parts.getJSONObject(key)
+                if (pending.optString("state") in active) pending.put("state", state).put("detail", detail.take(512))
+            }
+            else if (parts.optJSONObject(part)?.optString("state")?.let { it !in active } == true) return@synchronized
             parts.put(part, JSONObject().put("state", state).put("detail", detail.take(512)))
             val states = parts.keys().asSequence().map { parts.getJSONObject(it).getString("state") }.toList()
             val aggregate = AutomationResult.aggregate(states)
@@ -89,7 +94,14 @@ class AutomationState(private val context: Context) {
         val all = history()
         for (i in 0 until all.length()) {
             val row = all.getJSONObject(i)
-            if (row.optString("state") in active && row.optString("process") != process) row.put("state", "failed").put("error", "process_restarted_outcome_unknown")
+            if (row.optString("state") in active && row.optString("process") != process) {
+                row.put("state", "failed").put("error", "process_restarted_outcome_unknown").put("updated_at", System.currentTimeMillis())
+                val parts = row.optJSONObject("parts")
+                parts?.keys()?.asSequence()?.toList()?.forEach { key ->
+                    val part = parts.getJSONObject(key)
+                    if (part.optString("state") in active) part.put("state", "failed").put("detail", "process_restarted_outcome_unknown")
+                }
+            }
         }; save(all)
     }
     fun report(): JSONObject = synchronized(lock) {
@@ -100,6 +112,9 @@ class AutomationState(private val context: Context) {
             .put("warmth", temporary("warmth") ?: JSONObject.NULL).put("results", history())
             .put("native_level", prefs.nativeLevel ?: JSONObject.NULL)
             .put("native_read_at", NativeSnapshot.value?.at ?: this.prefs.getLong("native-read-at", 0))
+            .put("sample_current_process", NativeSnapshot.value != null)
+            .put("native_sample_age_ms", NativeSnapshot.value?.let { android.os.SystemClock.elapsedRealtime() - it.elapsed } ?: JSONObject.NULL)
+            .put("current_error", this.prefs.getString("current-native-error", null) ?: JSONObject.NULL)
             .put("native_qualified", prefs.nativeQualified).put("recovery", prefs.sessionState().name)
             .put("runtime", TvDisplayService.runtime()).put("status", prefs.status).put("warmth_status", prefs.warmthStatus)
             .put("manual_hold_until", this.prefs.getLong("manual-hold-until", 0))
