@@ -2,7 +2,8 @@
 package com.jmstudios.redmoon.tv
 
 import android.content.*
-import android.os.SystemClock
+import android.util.Log
+import org.json.JSONObject
 
 class TvReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -20,22 +21,45 @@ class TvReceiver : BroadcastReceiver() {
     }
 }
 
-/** Explicit opt-in, bounded tvQuickActions commands; no arbitrary key/root command API. */
+/** Fixed legacy aliases, deliberately separated from paired v1 automation. */
 class TvControlReceiver : BroadcastReceiver() {
-    companion object { private var lastCommandAt = -1000L; private var lastCommand = "" }
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != "com.cbkii.redmoontv.CONTROL" || !TvPreferences(context).store.getBoolean("external-control", false)) return
+        if (intent.action == AutomationContract.ACTION) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (!admit(now)) {
+                if (isOrderedBroadcast) { resultCode = 0; resultData = "{\"state\":\"rejected\",\"error_code\":\"RATE_LIMITED\"}" }
+                return
+            }
+            try {
+                val result = AutomationState.submit(context, intent.extras)
+                if (isOrderedBroadcast) { resultCode = -1; resultData = result.toString() }
+            } catch (error: Exception) {
+                if (isOrderedBroadcast) { resultCode = 0; resultData = JSONObject().put("state", "rejected")
+                    .put("error_code", "CONTRACT_OR_PAIRING_REJECTED").put("error", error.message ?: "Invalid request").toString() }
+                if (now - lastRejected >= 10000) {
+                    lastRejected = now
+                    Log.i("RedMoonAutomation", "Request rejected; invalid contract, disabled integration or revoked token")
+                }
+            }
+            return
+        }
+        val prefs = TvPreferences(context)
+        if (intent.action != "com.cbkii.redmoontv.CONTROL" || !prefs.store.getBoolean("external-control", false) ||
+            !prefs.store.getBoolean("legacy-control", false)) return
         val command = intent.getStringExtra("command") ?: return
         if (command !in listOf("pause", "resume", "phase", "warmth_off", "read", "ensure_running")) return
         val phase = Phase.values().firstOrNull { it.name == intent.getStringExtra("phase") }
         if (command == "phase" && phase == null) return
-        val now = SystemClock.elapsedRealtime()
-        synchronized(TvControlReceiver::class.java) {
-            val key = "$command:${phase?.name}"
-            if (key == lastCommand && now - lastCommandAt < 750L) return
-            lastCommandAt = now; lastCommand = key
-        }
         if (command == "ensure_running") TvContinuity.ensureRunning(context, "external_wake")
         else TvDisplayService.command(context, command, phase)
+    }
+    companion object {
+        private var window = 0L
+        private var count = 0
+        private var lastRejected = -10000L
+        private fun admit(now: Long): Boolean {
+            if (now - window >= 1000) { window = now; count = 0 }
+            return ++count <= 32
+        }
     }
 }

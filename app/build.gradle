@@ -41,7 +41,8 @@ def nativeDigest = java.security.MessageDigest.getInstance('SHA-256')
  'A4RootBacklightBackend.kt', 'A4RootMain.java', 'RootProtocol.java', 'BootIdentity.java',
  'BrightnessPolicy.kt', 'TransitionSession.kt', 'TvDisplayService.kt', 'TvStorage.kt',
  'TvPreferences.kt', 'ControllerQueue.kt', 'NativeSessionState.kt', 'QuantisedFade.kt',
- 'TvContinuity.kt', 'TvReceiver.kt', 'ValidationBackend.kt'].sort().each { name ->
+ 'TvContinuity.kt', 'TvReceiver.kt', 'ValidationBackend.kt',
+ 'AutomationContract.kt', 'AutomationState.kt', 'AutomationResult.kt', 'AutomationGuards.kt'].sort().each { name ->
     nativeDigest.update(name.getBytes('UTF-8'))
     nativeDigest.update(file('src/main/java/com/jmstudios/redmoon/tv/' + name).bytes)
 }
@@ -54,8 +55,8 @@ android {
         applicationId "com.cbkii.redmoontv"
         minSdkVersion 26
         targetSdkVersion 32
-        versionCode = (project.findProperty('VERSION_CODE') ?: '40').toString().toInteger()
-        versionName = (project.findProperty('VERSION_NAME') ?: '4.0.1-tv.1').toString()
+        versionCode = (project.findProperty('VERSION_CODE') ?: '106').toString().toInteger()
+        versionName = (project.findProperty('VERSION_NAME') ?: '106').toString()
         manifestPlaceholders = [appLabel: 'Red Moon TV']
         buildConfigField 'String', 'SOURCE_SHA', '"' + sourceSha + '"'
         buildConfigField 'String', 'BUILD_ID', '"' + buildIdentity + '"'

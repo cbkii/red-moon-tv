@@ -16,7 +16,7 @@ object TvContinuity {
         val alarm = context.getSystemService(AlarmManager::class.java)
         val event = PendingIntent.getBroadcast(context, 72, Intent(context, TvReceiver::class.java).setAction(HEALTH), PendingIntent.FLAG_IMMUTABLE)
         val prefs = TvPreferences(context)
-        if (!prefs.backlightEnabled && !prefs.warmthEnabled) { alarm.cancel(event); nextHealth = 0; return }
+        if (!prefs.backlightEnabled && !prefs.warmthEnabled && !AutomationState(context).pending()) { alarm.cancel(event); nextHealth = 0; return }
         val now = SystemClock.elapsedRealtime()
         if (nextHealth > now && nextHealth - now <= INTERVAL) return
         nextHealth = now + INTERVAL
@@ -26,7 +26,7 @@ object TvContinuity {
         val prefs = TvPreferences(context)
         // Rearm before launching: a crash during reconciliation does not lose the next attempt.
         arm(context)
-        if (!prefs.backlightEnabled && !prefs.warmthEnabled) return false
+        if (!prefs.backlightEnabled && !prefs.warmthEnabled && !AutomationState(context).pending()) return false
         return try {
             context.startForegroundService(Intent(context, TvDisplayService::class.java)
                 .putExtra("command", "ensure_running").putExtra("reason", reason.take(80)))

@@ -144,3 +144,5 @@ All used artwork is released into the public domain. Some of the icons use clip 
 [openclipart.org]: https://openclipart.org/
 
 Startup/continuity implementation and ADB experiments: [A4-STARTUP-CONTINUITY.md](docs/A4-STARTUP-CONTINUITY.md).
+
+Paired tvQuickActions shortcuts, broadcasts, recipes and ADB validation: [TVQUICKACTIONS.md](docs/TVQUICKACTIONS.md).

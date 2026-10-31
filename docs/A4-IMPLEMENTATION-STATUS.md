@@ -1,5 +1,9 @@
 # Implementation ledger — 30 October 2026
 
+## v106 integration review — 31 October 2026
+
+PR #1's final continuity-runner corrections are integrated with PR #6's paired automation. Native-worker restart/backend selection now also recognise temporary brightness ownership while saved scheduling is disabled; diagnostics classify that live ownership correctly. v106 defaults to versionName/versionCode 106 and adds an explicit maintainer-authorised public prerelease path. Historical entries below retain their original source/run context. The current startup/recovery contract is [A4-STARTUP-CONTINUITY.md](A4-STARTUP-CONTINUITY.md), and integration coverage/remaining device gates are [A4-FINAL-REVIEW-v106.md](A4-FINAL-REVIEW-v106.md).
+
 ## Device-result follow-up — 31 October 2026
 
 The supplied results identify the older signed 22f APK and a real `0..0` range-query failure before native level read; see [device analysis and corrective implementation](A4-DEVICE-RESULTS-2026-10-31.md). The updated implementation uses installed TVNative signatures and explicit min/max queries, permits read-only diagnosis without a validated range, and still blocks setters without actual range/context. Home/three-phase cards and separate Schedule/Warmth/Diagnostics/Settings pages replace the long form. The protected read-only ADB provider works independently of display-service lifetime, and the collector derives read/restore results automatically. Current protocol is `apk-jni-v4/root-pipe-v1`; physical acceptance remains open until an updated installed APK is tested.

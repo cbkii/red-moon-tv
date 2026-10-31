@@ -171,6 +171,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".tv.TvAutomationActivity" android:exported="true"
+            android:label="${appLabel}" android:theme="@android:style/Theme.Material.NoActionBar">
+            <intent-filter><action android:name="android.intent.action.CREATE_SHORTCUT" />
+                <category android:name="android.intent.category.DEFAULT" /></intent-filter>
+        </activity>
+        <activity android:name=".tv.TvAutomationDispatchActivity" android:exported="true"
+            android:excludeFromRecents="true" android:noHistory="true" android:theme="@style/TransparentTheme" />
         <service android:name=".tv.A4NativeService" android:directBootAware="true" android:process=":backlight" android:exported="false" />
         <service android:name=".tv.TvDisplayService" android:directBootAware="true" android:stopWithTask="false" android:exported="false" />
         <provider android:name=".tv.TvDiagnosticsProvider" android:directBootAware="true"
@@ -187,7 +194,7 @@
             </intent-filter>
         </receiver>
         <receiver android:name=".tv.TvControlReceiver" android:exported="true">
-            <intent-filter><action android:name="com.cbkii.redmoontv.CONTROL" /></intent-filter>
+            <intent-filter><action android:name="com.cbkii.redmoontv.CONTROL" /><action android:name="com.cbkii.redmoontv.AUTOMATION" /></intent-filter>
         </receiver>
     </application>
 </manifest>

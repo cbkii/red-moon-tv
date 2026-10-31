@@ -62,7 +62,16 @@ class TvActivity : Activity() {
     }
     override fun onStart() { super.onStart(); registerReceiver(refresh, IntentFilter(TvDisplayService.STATUS)) }
     override fun onStop() { unregisterReceiver(refresh); super.onStop() }
-    override fun onResume() { super.onResume(); if (::prefs.isInitialized) { TvContinuity.ensureRunning(this, "activity"); render() } }
+    override fun onResume() {
+        super.onResume()
+        if (::prefs.isInitialized) { TvContinuity.ensureRunning(this, "activity"); render() }
+        intent.getStringExtra("automation-open-id")?.let { id ->
+            val automation = AutomationState(this)
+            if (automation.find(id)?.optString("command") == "open_controls")
+                automation.result(id, "control", "applied", "Controls became visible")
+            intent.removeExtra("automation-open-id")
+        }
+    }
     override fun onSaveInstanceState(out: Bundle) {
         out.putString("page", page.name)
         scheduleDraft?.let { out.putIntArray("draft", it.flatMap { s -> listOf(s.level, s.startMinute, s.fadeSeconds) }.toIntArray()) }
@@ -255,6 +264,7 @@ class TvActivity : Activity() {
         text(DiagnosticsExporter.report(this), 13, muted).typeface = Typeface.MONOSPACE
     }
     private fun settings() {
+        button(getString(R.string.automation_title), "settings-automation") { startActivity(Intent(this, TvAutomationActivity::class.java)) }
         toggle(getString(R.string.tv_smooth_fades), !prefs.strictTransitions, "settings-smooth", !prefs.backlightEnabled) { smooth ->
             if (!smooth) { prefs.store.edit().putString("transition-mode", "strict").apply(); render() }
             else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
@@ -276,13 +286,6 @@ class TvActivity : Activity() {
             prefs.store.edit().putBoolean("enforce-schedule", enabled).apply(); render()
         }
         text(getString(R.string.tv_continuity_explanation), 14, muted)
-        val external = prefs.store.getBoolean("external-control", false)
-        toggle(getString(R.string.tv_text_028), external, "settings-external") { enabled ->
-            if (!enabled) { prefs.store.edit().putBoolean("external-control", false).apply(); render() }
-            else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(getString(R.string.tv_text_029))
-                .setMessage(getString(R.string.tv_text_030))
-                .setNegativeButton(getString(R.string.tv_text_031), null).setPositiveButton(getString(R.string.tv_text_032)) { _, _ -> prefs.store.edit().putBoolean("external-control", true).apply(); render() }.show()
-        }
         text(getString(R.string.tv_message_062, BuildConfig.VERSION_NAME, BuildConfig.BUILD_ID, BuildConfig.SOURCE_SHA.take(12)), 15, muted)
     }
     private fun confirmProbe() {

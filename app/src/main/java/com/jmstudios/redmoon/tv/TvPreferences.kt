@@ -79,7 +79,8 @@ class TvPreferences(private val context: Context) {
     fun sessionState(): NativeSessionState = try {
         val record = RecoveryJournal(context).load()
         if (record != null && record.identity.isBlank() && record.session != TvDisplayService.liveSession) NativeSessionState.RECOVERY
-        else nativeSessionState(record, TvDisplayService.liveSession, backlightEnabled,
+        else nativeSessionState(record, TvDisplayService.liveSession, backlightEnabled ||
+            AutomationState(context).temporary("brightness")?.optString("kind") == "value",
             store.contains("manual-hold-until"), TvDisplayService.active && store.getBoolean("probe-active", false),
             TvDisplayService.runtime().optString("operation") in listOf("transition", "fade", "probe", "test-fade", "restore"))
     } catch (_: Exception) { NativeSessionState.RECOVERY }

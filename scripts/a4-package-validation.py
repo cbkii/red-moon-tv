@@ -20,9 +20,9 @@ def package(root, output):
             if p.is_file():
                 info=zipfile.ZipInfo(p.name); info.external_attr=(0o100755 if p.suffix=='.sh' else 0o100644)<<16
                 z.writestr(info,p.read_bytes())
-    files=[root/'scripts'/name for name in ('a4-collect.py','a4-validate.py','a4-continuity.py')]
+    files=[root/'scripts'/name for name in ('a4-collect.py','a4-validate.py','a4-continuity.py','a4-automation.py')]
     files += sorted((root/'docs').glob('a4-*-plan.json'))
-    files += [root/'docs/A4-STARTUP-CONTINUITY.md',root/'docs/A4-ADB-IMPLEMENTATION.md',module]
+    files += [root/'docs/A4-STARTUP-CONTINUITY.md',root/'docs/A4-ADB-IMPLEMENTATION.md',root/'docs/TVQUICKACTIONS.md',module]
     inventory={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
     bundle=output/('Red-Moon-TV-A4-Continuity-' + source[:12]+'.zip')
     with zipfile.ZipFile(bundle,'w',zipfile.ZIP_DEFLATED) as z:
