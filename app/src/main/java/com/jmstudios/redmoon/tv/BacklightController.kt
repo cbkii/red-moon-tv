@@ -3,32 +3,31 @@ package com.jmstudios.redmoon.tv
 
 /** Persisted before a setter; pending is deliberately separate from confirmed readback. */
 data class RecoveryRecord(val original: Int, val confirmed: Int, val pending: Int?, val context: String,
-                          val kind: String, val session: String)
+                          val kind: String, val session: String, val identity: String = "")
 interface RecoveryStore {
     fun load(): RecoveryRecord?
     fun save(record: RecoveryRecord)
     fun clear()
+    fun archive(record: RecoveryRecord) { clear() }
 }
 class BacklightContextChange(message: String) : IllegalStateException(message)
 class ExternalBacklightChange(message: String) : IllegalStateException(message)
 
 /** Single serial caller. Cancellation never asserts that an in-flight native call was cancelled. */
 class BacklightController(private val backend: BacklightBackend, private val journal: RecoveryStore,
-                          private val session: String) {
+                          private val session: String, private val identity: () -> String = { "test" }) {
     private var expected: Int? = null
     private var expectedContext: String? = null
-    private var claimed = false
+    @Volatile private var claimed = false
     private var active: RecoveryRecord? = null
     fun pendingRecovery() = journal.load()
     fun read() = backend.read().also { NativeTrace.record("read", it, backend.context()) }
-    /** Confirmed schedule journals may survive a process death; pending/probe records never auto-resume. */
+    /** Adoption and begin are one lease-protected transaction. No unlocked journal mutation. */
     fun adoptSchedule(): Boolean {
-        val prior = journal.load() ?: return false
-        check(prior.kind == "schedule" && prior.pending == null) { "Explicit recovery required" }
-        val current = backend.read()
-        if (backend.context() != prior.context) throw BacklightContextChange("Input/picture/HDR/boot context changed")
-        if (current != prior.confirmed) throw ExternalBacklightChange("Native brightness adjusted while controller was absent")
-        journal.save(prior.copy(session = session)); return true
+        if (journal.load() == null) return false
+        begin("schedule")
+        release()
+        return true
     }
     /** Reads only while active, so a steady phase can yield before its next scheduled write. */
     fun observe() {
@@ -45,17 +44,22 @@ class BacklightController(private val backend: BacklightBackend, private val jou
         try {
             val current = backend.read()
             val context = backend.context()?.takeIf { it.isNotBlank() } ?: error("No native context; reads are available, writes blocked")
-            val prior = journal.load()
-            // Never erase a pending/previous-process recovery transaction on a resume request.
-            check(prior == null || (prior.pending == null && prior.session == session && prior.kind == kind)) {
+            var prior = journal.load()
+            if (prior != null && (prior.session != session || prior.context != context)) {
+                when (ContinuityPolicy.recovery(prior, current, context, identity())) {
+                    ScheduleRecovery.ADOPT -> { prior = prior.copy(session = session); journal.save(prior) }
+                    ScheduleRecovery.NEW_BOOT -> { journal.archive(prior); prior = null }
+                    ScheduleRecovery.CONTEXT_CHANGED -> throw BacklightContextChange("Input/picture/HDR context changed")
+                    ScheduleRecovery.MANUAL_CHANGE -> throw ExternalBacklightChange("Native brightness adjusted while controller was absent")
+                    else -> error("Recovery/qualification is pending; explicitly Restore or Keep the saved session")
+                }
+            }
+            check(prior == null || (prior.pending == null && prior.session == session && prior.kind == kind && prior.identity == identity())) {
                 "Recovery is pending; explicitly reconcile or discard it before scheduling"
             }
-            if (prior != null && context != prior.context) throw BacklightContextChange("Input/picture/HDR context changed")
-            if (prior != null && current != prior.confirmed) {
-                throw ExternalBacklightChange("Native value/context changed; schedule yields until the next boundary or Resume")
-            }
+            if (prior != null && current != prior.confirmed) throw ExternalBacklightChange("Native adjustment retained until the next phase")
             expected = current; expectedContext = context
-            active = prior ?: RecoveryRecord(current, current, null, context, kind, session)
+            active = prior ?: RecoveryRecord(current, current, null, context, kind, session, identity())
             return current
         } catch (error: Exception) { release(); throw error }
     }
@@ -97,6 +101,11 @@ class BacklightController(private val backend: BacklightBackend, private val jou
             journal.clear(); active = null; expected = null
             return true
         } finally { release() }
+    }
+    fun retireConfirmed() {
+        check(!claimed)
+        journal.load()?.let { check(it.pending == null); journal.archive(it) }
+        active = null; expected = null
     }
     /** Called only on explicit Keep / next-boundary after a known external adjustment. */
     fun discard() { check(!claimed); journal.clear(); active = null; expected = null }

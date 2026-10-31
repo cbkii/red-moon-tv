@@ -62,7 +62,7 @@ class TvActivity : Activity() {
     }
     override fun onStart() { super.onStart(); registerReceiver(refresh, IntentFilter(TvDisplayService.STATUS)) }
     override fun onStop() { unregisterReceiver(refresh); super.onStop() }
-    override fun onResume() { super.onResume(); if (::prefs.isInitialized) render() }
+    override fun onResume() { super.onResume(); if (::prefs.isInitialized) { TvContinuity.ensureRunning(this, "activity"); render() } }
     override fun onSaveInstanceState(out: Bundle) {
         out.putString("page", page.name)
         scheduleDraft?.let { out.putIntArray("draft", it.flatMap { s -> listOf(s.level, s.startMinute, s.fadeSeconds) }.toIntArray()) }
@@ -273,6 +273,10 @@ class TvActivity : Activity() {
             AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setMessage(getString(R.string.tv_text_026))
                 .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_027)) { _, _ -> command("keep") }.show()
         }
+        toggle(getString(R.string.tv_enforce_schedule), prefs.enforceSchedule, "settings-enforce") { enabled ->
+            prefs.store.edit().putBoolean("enforce-schedule", enabled).apply(); render()
+        }
+        text(getString(R.string.tv_continuity_explanation), 14, muted)
         text(getString(R.string.tv_message_062, BuildConfig.VERSION_NAME, BuildConfig.BUILD_ID, BuildConfig.SOURCE_SHA.take(12)), 15, muted)
     }
     private fun confirmProbe() {

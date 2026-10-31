@@ -178,16 +178,17 @@
         </activity>
         <activity android:name=".tv.TvAutomationDispatchActivity" android:exported="true"
             android:excludeFromRecents="true" android:noHistory="true" android:theme="@style/TransparentTheme" />
-        <service android:name=".tv.A4NativeService" android:process=":backlight" android:exported="false" />
-        <service android:name=".tv.TvDisplayService" android:exported="false" />
-        <provider android:name=".tv.TvDiagnosticsProvider"
+        <service android:name=".tv.A4NativeService" android:directBootAware="true" android:process=":backlight" android:exported="false" />
+        <service android:name=".tv.TvDisplayService" android:directBootAware="true" android:stopWithTask="false" android:exported="false" />
+        <provider android:name=".tv.TvDiagnosticsProvider" android:directBootAware="true"
             android:authorities="${applicationId}.diagnostics" android:exported="true"
             android:readPermission="android.permission.DUMP" android:writePermission="android.permission.DUMP"
             android:grantUriPermissions="false" />
-        <receiver android:name=".tv.TvReceiver" android:exported="false">
+        <receiver android:name=".tv.TvReceiver" android:directBootAware="true" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>

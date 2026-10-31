@@ -80,7 +80,8 @@ class AutomationState(private val context: Context) {
     fun start(r: AutomationRequest, parts: List<String>) = synchronized(lock) {
         val all = history()
         for (i in 0 until all.length()) if (all.getJSONObject(i).optString("request_id") == r.id) {
-            val row = all.getJSONObject(i); val p = row.getJSONObject("parts")
+            val row = all.getJSONObject(i); if (row.optString("state") !in active) return@synchronized
+            val p = row.getJSONObject("parts")
             parts.forEach { p.put(it, JSONObject().put("state", "running")) }; row.put("state", "running"); save(all)
         }
     }
@@ -98,7 +99,7 @@ class AutomationState(private val context: Context) {
             .put("brightness", temporary("brightness") ?: JSONObject.NULL)
             .put("warmth", temporary("warmth") ?: JSONObject.NULL).put("results", history())
             .put("native_level", prefs.nativeLevel ?: JSONObject.NULL)
-            .put("native_read_at", this.prefs.getLong("native-read-at", 0))
+            .put("native_read_at", NativeSnapshot.value?.at ?: this.prefs.getLong("native-read-at", 0))
             .put("native_qualified", prefs.nativeQualified).put("recovery", prefs.sessionState().name)
             .put("runtime", TvDisplayService.runtime()).put("status", prefs.status).put("warmth_status", prefs.warmthStatus)
             .put("manual_hold_until", this.prefs.getLong("manual-hold-until", 0))

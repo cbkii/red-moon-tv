@@ -45,6 +45,16 @@ class TvDiagnosticsProvider : ContentProvider() {
             finally { Binder.restoreCallingIdentity(identity) }
         }
         TvAdbControl.validate(method, data)
+        if (method == "supervise") {
+            val identity = Binder.clearCallingIdentity()
+            try {
+                val prefs = TvPreferences(app)
+                val enabled = prefs.backlightEnabled || prefs.warmthEnabled
+                if (enabled && !TvDisplayService.active) TvContinuity.ensureRunning(app, "supervisor")
+                return Bundle().apply { putString("result", JSONObject().put("enabled", enabled)
+                    .put("service_running", TvDisplayService.active).put("runtime", TvDisplayService.runtime()).toString()) }
+            } finally { Binder.restoreCallingIdentity(identity) }
+        }
         val id = UUID.randomUUID().toString()
         val identity = Binder.clearCallingIdentity()
         try {

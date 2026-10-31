@@ -1,0 +1,6 @@
+id=redmoontv_supervisor
+name=Red Moon TV optional continuity supervisor
+version=1.0
+versionCode=1
+author=cbkii
+description=Opt-in late-start recovery of one selected Red Moon TV package. No panel writer, mount, SELinux or stopped-package override.

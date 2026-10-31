@@ -33,7 +33,8 @@ class A4RootBacklightBackend(context: Context) : BacklightBackend {
         fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
         val command = "CLASSPATH=${quote(apk)} exec /system/bin/app_process32 /system/bin " +
             "--nice-name=${quote(app.packageName + ":a4-root")} com.jmstudios.redmoon.tv.A4RootMain ${quote(token)} ${quote(bindings)}"
-        val child = ProcessBuilder("su", "-c", command).start()
+        val child = try { ProcessBuilder("su", "-c", command).start() }
+            catch (error: IOException) { throw IllegalStateException("Root service unavailable before startup", error) }
         process = child
         input = DataInputStream(BufferedInputStream(child.inputStream))
         output = DataOutputStream(BufferedOutputStream(child.outputStream))
@@ -68,15 +69,17 @@ class A4RootBacklightBackend(context: Context) : BacklightBackend {
             }
             val response = try { future.get(if (operation == RootProtocol.HELLO) 20 else 7, TimeUnit.SECONDS) }
                 catch (error: Exception) {
+                    val awaitingConsent = identity == null
                     future.cancel(true); broken = true
                     val detail = synchronized(stderr) { stderr.toString().takeLast(2048) }
                     closeTransport()
+                    if (awaitingConsent) throw NativeAccessRequired("Root approval unavailable/denied; use an explicit Connect to retry. $detail", error)
                     throw IllegalStateException("Root transport failed/timed out; outcome unknown. No retry. $detail", error)
                 }
             val worker = "${response.pid}:${response.worker}"
             check(identity == null || identity == worker) { "Root worker changed; reconcile before retrying" }
             identity = worker
-            val edit = app.getSharedPreferences("tv-display-v1", Context.MODE_PRIVATE).edit()
+            val edit = TvStorage.preferences(app).edit()
             edit.putString("native-diagnostics", "root-pipe-v1; worker=$worker; ${response.diagnostics}")
             if (operation == RootProtocol.HELLO) edit.remove("first-initialisation-error")
             if (response.initialisationError.isNotEmpty()) edit.putString("first-initialisation-error", response.initialisationError)

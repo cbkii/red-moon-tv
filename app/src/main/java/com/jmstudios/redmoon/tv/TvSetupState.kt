@@ -24,9 +24,9 @@ fun tvSetupStep(identityReady: Boolean, recovery: Boolean, readState: String, le
 
 /** In-memory only, including during fades. No disk write or polling in the native hot path. */
 object NativeSnapshot {
-    data class Value(val level: Int, val writeContext: Boolean, val root: Boolean, val at: Long, val identity: String?)
+    data class Value(val level: Int, val writeContext: Boolean, val root: Boolean, val at: Long, val identity: String?, val elapsed: Long)
     @Volatile var value: Value? = null
         private set
-    fun record(level: Int, context: Boolean, root: Boolean, identity: String? = null) { value = Value(level, context, root, System.currentTimeMillis(), identity) }
+    fun record(level: Int, context: Boolean, root: Boolean, identity: String? = null) { value = Value(level, context, root, System.currentTimeMillis(), identity, android.os.SystemClock.elapsedRealtime()) }
     fun clear() { value = null }
 }

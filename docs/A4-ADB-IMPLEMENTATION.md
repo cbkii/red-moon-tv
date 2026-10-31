@@ -80,3 +80,5 @@ Added JVM regression cases cover queue saturation/restore, latest transition coa
 Promotion now requires independent gates for brightness and warmth on Android, tuner, HDMI and HDR, plus manual override and fade persistence. Existing exact APK/source/signer binding, stable-package installation, unchanged-byte promotion, signing-secret isolation and draft-release workflow remain intact. No merge or release publication is authorised by this implementation alone. Prepare the stable candidate only after the owning PR is merged with approval, using the existing default-branch workflow.
 
 Repeated writes use the established stock update=3 contract. Its actual persistence/flash behaviour and physical input/HDR effects remain unproven. No alternate update flag, raw HIDL parcel or SurfaceFlinger transaction is invented to bypass those unknowns. Missing hardware acceptance remains release-blocking; production fades are not silently downgraded.
+
+For Direct Boot, liveness/effect recovery, optional external supervision and ADB continuity experiments, see [A4-STARTUP-CONTINUITY.md](A4-STARTUP-CONTINUITY.md).

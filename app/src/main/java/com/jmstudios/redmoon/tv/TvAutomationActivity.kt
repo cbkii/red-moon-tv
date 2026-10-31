@@ -23,7 +23,7 @@ class TvAutomationActivity : Activity() {
         super.onCreate(savedInstanceState); state = AutomationState(this); render()
     }
     private fun render() {
-        rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(48, 28, 48, 28) }
+        rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(32), dp(20), dp(32), dp(20)) }
         setContentView(ScrollView(this).apply { setBackgroundColor(Color.rgb(14, 23, 36)); addView(rows) })
         rows.addView(TextView(this).apply { text = getString(R.string.automation_title); textSize = 28f; setTextColor(Color.WHITE) })
         rows.addView(TextView(this).apply { text = getString(R.string.automation_help); textSize = 17f; setTextColor(Color.LTGRAY) })
@@ -68,9 +68,10 @@ class TvAutomationActivity : Activity() {
             text = state.report().toString(2); textSize = 14f; setTextColor(Color.LTGRAY)
         })
     }
+    private fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
     private fun button(label: String, action: () -> Unit) {
         rows.addView(Button(this).apply {
-            text = label; isAllCaps = false; textSize = 18f; minHeight = 64
+            text = label; isAllCaps = false; textSize = 18f; minHeight = dp(54)
             setOnClickListener { action() }
         }, LinearLayout.LayoutParams(-1, -2))
     }

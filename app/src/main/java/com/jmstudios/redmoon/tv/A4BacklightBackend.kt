@@ -13,6 +13,7 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
     private val main = Handler(Looper.getMainLooper())
     private val stateLock = Any()
     @Volatile private var active: Binding? = null
+    @Volatile private var leaseClaimed = false
     private var nativeContext: String? = null
     private var sequence = 0
     private class Binding {
@@ -45,6 +46,7 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
     private fun connect(): Binding {
         check(Looper.myLooper() != Looper.getMainLooper()) { "Native calls require the controller worker" }
         active?.let { if (current(it) && it.remote != null) return it else retire(it) }
+        check(!leaseClaimed) { "Native worker disconnected while owned; reconcile before reconnecting" }
         val binding = Binding()
         binding.link = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -104,7 +106,7 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
             if (operation == "hello") {
                 binding.session.hello(result.getInt("uid", -1), result.getInt("pid", -1), Process.myUid(), Process.myPid(), worker)
             } else binding.session.verify(result.getString("connection"), worker)
-            val edit = app.getSharedPreferences("tv-display-v1", Context.MODE_PRIVATE).edit()
+            val edit = TvStorage.preferences(app).edit()
             if (operation == "hello") edit.remove("first-initialisation-error")
             result.getString("diagnostics")?.let { edit.putString("native-diagnostics", it) }
             result.getString("first-initialisation-error")?.let { edit.putString("first-initialisation-error", it) }
@@ -127,8 +129,8 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
         NativeSnapshot.record(level, !nativeContext.isNullOrBlank(), false, nativeContext)
         return level
     }
-    override fun claim() { call("claim") }
+    override fun claim() { call("claim"); leaseClaimed = true }
     override fun write(value: Int) { require(value in 0..100); call("write", value) }
-    override fun release() { if (active?.remote != null) call("release") }
-    override fun close() { active?.let { retire(it) }; nativeContext = null }
+    override fun release() { if (active?.remote != null) call("release"); leaseClaimed = false }
+    override fun close() { active?.let { retire(it) }; nativeContext = null; leaseClaimed = false }
 }

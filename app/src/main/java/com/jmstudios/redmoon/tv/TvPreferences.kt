@@ -7,11 +7,11 @@ import java.io.File
 import java.security.MessageDigest
 
 class TvPreferences(private val context: Context) {
-    val store = context.getSharedPreferences("tv-display-v1", Context.MODE_PRIVATE)
+    val store = TvStorage.preferences(context)
     var backlightEnabled: Boolean
         get() = store.getBoolean("backlight", false)
         set(value) { store.edit().putBoolean("backlight", value).apply() }
-    val identityReady: Boolean get() = identity != null
+    val identityReady: Boolean get() = identity != null && TvStorage.ready(context)
     val signature: String get() = identity?.let { "$it:backend=${if (rootBackend) "root" else "apk"}" } ?: ""
     val rootBackend: Boolean get() = store.getBoolean("root-backend", false)
     val currentRead: Boolean get() = store.getString("native-read-source", "") == BuildConfig.SOURCE_SHA &&
@@ -55,10 +55,10 @@ class TvPreferences(private val context: Context) {
                 (listOf(info.sourceDir) + (info.splitSourceDirs?.toList() ?: emptyList()) +
                     (info.sharedLibraryFiles?.toList() ?: emptyList())).joinToString(":") { digest(File(it)) }
             } catch (_: Exception) { "binding-unavailable" }
-            val result = android.os.Build.FINGERPRINT + ":" + BuildConfig.BACKEND_PROTOCOL + ":" + BuildConfig.SOURCE_SHA +
-                ":" + BuildConfig.BUILD_ID + ":" + binding + ":" + digest(File("/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so"))
+            val vendor = digest(File("/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so"))
+            val result = android.os.Build.FINGERPRINT + ":" + BuildConfig.BACKEND_PROTOCOL + ":" + BuildConfig.NATIVE_COMPATIBILITY + ":" + binding + ":" + vendor
             val callbacks = synchronized(TvPreferences::class.java) {
-                identity = result; checking = false
+                identity = result.takeUnless { binding.contains("unavailable") || binding.contains("unreadable:") || vendor.startsWith("unreadable:") }; checking = false
                 listeners.toList().also { listeners.clear() }
             }
             main.post { callbacks.forEach { it() } }
@@ -77,7 +77,9 @@ class TvPreferences(private val context: Context) {
         } catch (_: Exception) { "unreadable:${file.name}" }
     }
     fun sessionState(): NativeSessionState = try {
-        nativeSessionState(RecoveryJournal(context).load(), TvDisplayService.liveSession, backlightEnabled,
+        val record = RecoveryJournal(context).load()
+        if (record != null && record.identity.isBlank() && record.session != TvDisplayService.liveSession) NativeSessionState.RECOVERY
+        else nativeSessionState(record, TvDisplayService.liveSession, backlightEnabled,
             store.contains("manual-hold-until"), TvDisplayService.active && store.getBoolean("probe-active", false),
             TvDisplayService.runtime().optString("operation") in listOf("transition", "fade", "probe", "test-fade", "restore"))
     } catch (_: Exception) { NativeSessionState.RECOVERY }
@@ -108,6 +110,7 @@ class TvPreferences(private val context: Context) {
     var warmthStatus: String
         get() = store.getString("warmth-status", "Warmth off")!!
         set(value) { store.edit().putString("warmth-status", value).apply() }
+    val enforceSchedule: Boolean get() = store.getBoolean("enforce-schedule", false)
     val strictTransitions: Boolean get() = store.getString("transition-mode", "strict") != "smooth"
     fun policy(): BrightnessPolicy = BrightnessPolicy(BrightnessPolicy.defaults().settings.map {
         it.copy(level = store.getInt("${it.phase}-level", it.level),
