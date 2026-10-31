@@ -6,8 +6,13 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Binder
+import android.os.Bundle
+import android.content.Intent
+import org.json.JSONObject
+import java.util.UUID
 
-/** ADB shell has DUMP; ordinary apps do not. This endpoint never starts JNI or a setter. */
+/** Read-only DUMP report; fixed mutation calls additionally require the shell/root UID. */
 class TvDiagnosticsProvider : ContentProvider() {
     override fun onCreate() = true
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?,
@@ -16,6 +21,22 @@ class TvDiagnosticsProvider : ContentProvider() {
         return MatrixCursor(arrayOf("report"), 1).apply {
             addRow(arrayOf(DiagnosticsExporter.report(requireNotNull(context))))
         }
+    }
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
+        // ContentProvider.call does not enforce read/write permissions automatically.
+        val app = requireNotNull(context)
+        require(Binder.getCallingUid() in setOf(0, 2000)) { "ADB shell/root only" }
+        if (Binder.getCallingUid() != 0) app.enforceCallingPermission("android.permission.DUMP", "ADB diagnostics")
+        require((arg?.length ?: 0) <= 8192 && (extras == null || extras.isEmpty)) { "Bounded JSON argument only" }
+        val data = JSONObject(arg ?: "{}")
+        TvAdbControl.validate(method, data)
+        val id = UUID.randomUUID().toString()
+        val identity = Binder.clearCallingIdentity()
+        try {
+            app.startForegroundService(Intent(app, TvDisplayService::class.java).putExtra("command", "adb")
+                .putExtra("adb-command", method).putExtra("adb-data", data.toString()).putExtra("adb-id", id))
+        } finally { Binder.restoreCallingIdentity(identity) }
+        return Bundle().apply { putString("result", JSONObject().put("request_id", id).put("queued", true).toString()) }
     }
     override fun getType(uri: Uri) = "vnd.android.cursor.item/vnd.redmoontv.diagnostic"
     override fun insert(uri: Uri, values: ContentValues?): Uri? = throw UnsupportedOperationException("Read only")

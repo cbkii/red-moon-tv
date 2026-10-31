@@ -1,0 +1,166 @@
+[
+  {
+    "action": "key",
+    "key": "HOME"
+  },
+  {
+    "action": "remote",
+    "purpose": "Prepare android_apps content; use the terminal ADB keys, then DONE."
+  },
+  {
+    "action": "command",
+    "name": "read"
+  },
+  {
+    "action": "assert",
+    "field": "write_context_ready",
+    "equals": true
+  },
+  {
+    "action": "command",
+    "name": "probe"
+  },
+  {
+    "action": "wait",
+    "seconds": 2
+  },
+  {
+    "action": "observe",
+    "path": "android_apps"
+  },
+  {
+    "action": "wait",
+    "seconds": 20
+  },
+  {
+    "action": "checkpoint",
+    "label": "android_apps-restored"
+  },
+  {
+    "action": "assert",
+    "field": "probe_restored",
+    "equals": true
+  },
+  {
+    "action": "key",
+    "key": "TV"
+  },
+  {
+    "action": "remote",
+    "purpose": "Prepare tuner content; use the terminal ADB keys, then DONE."
+  },
+  {
+    "action": "command",
+    "name": "read"
+  },
+  {
+    "action": "assert",
+    "field": "write_context_ready",
+    "equals": true
+  },
+  {
+    "action": "command",
+    "name": "probe"
+  },
+  {
+    "action": "wait",
+    "seconds": 2
+  },
+  {
+    "action": "observe",
+    "path": "tuner"
+  },
+  {
+    "action": "wait",
+    "seconds": 20
+  },
+  {
+    "action": "checkpoint",
+    "label": "tuner-restored"
+  },
+  {
+    "action": "assert",
+    "field": "probe_restored",
+    "equals": true
+  },
+  {
+    "action": "key",
+    "key": "HDMI1"
+  },
+  {
+    "action": "remote",
+    "purpose": "Prepare hdmi content; use the terminal ADB keys, then DONE."
+  },
+  {
+    "action": "command",
+    "name": "read"
+  },
+  {
+    "action": "assert",
+    "field": "write_context_ready",
+    "equals": true
+  },
+  {
+    "action": "command",
+    "name": "probe"
+  },
+  {
+    "action": "wait",
+    "seconds": 2
+  },
+  {
+    "action": "observe",
+    "path": "hdmi"
+  },
+  {
+    "action": "wait",
+    "seconds": 20
+  },
+  {
+    "action": "checkpoint",
+    "label": "hdmi-restored"
+  },
+  {
+    "action": "assert",
+    "field": "probe_restored",
+    "equals": true
+  },
+  {
+    "action": "remote",
+    "purpose": "Select and play real HDR material; verify the input through the native report."
+  },
+  {
+    "action": "command",
+    "name": "read"
+  },
+  {
+    "action": "assert",
+    "field": "write_context_ready",
+    "equals": true
+  },
+  {
+    "action": "command",
+    "name": "probe"
+  },
+  {
+    "action": "wait",
+    "seconds": 2
+  },
+  {
+    "action": "observe",
+    "path": "hdr"
+  },
+  {
+    "action": "wait",
+    "seconds": 20
+  },
+  {
+    "action": "checkpoint",
+    "label": "hdr-restored"
+  },
+  {
+    "action": "assert",
+    "field": "probe_restored",
+    "equals": true
+  }
+]

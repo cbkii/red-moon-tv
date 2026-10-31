@@ -91,12 +91,14 @@ public final class A4NativeBridge {
         int picture = nativeApi.picture();
         if (picture < 0) throw new IllegalStateException("Picture context unavailable");
         if (bootIdentity == null) throw new IllegalStateException("Boot context unavailable; read allowed, writes blocked");
-        return Build.FINGERPRINT + ":boot:" + bootIdentity + ":picture=" + picture;
+        String source = nativeApi.source();
+        return Build.FINGERPRINT + ":boot:" + bootIdentity + ":picture=" + picture
+            + ":input=" + source.length() + ":" + source + ":hdr=" + nativeApi.hdr();
     }
     public String diagnostics() {
         return PROTOCOL + "; uid=" + Process.myUid() + "; abi=" + android.text.TextUtils.join(",", Build.SUPPORTED_ABIS)
             + "; source=" + bindingSource + "; loader=" + installedApi.getClassLoader()
             + "; JNI=/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so; range=" + minimum + ".." + maximum
-            + "; rangeQuery=" + nativeApi.rangeSource + "; loadMs=" + loadedAt + "; context=boot/picture only; input/HDR identity unqualified";
+            + "; rangeQuery=" + nativeApi.rangeSource + "; loadMs=" + loadedAt + "; context=boot/picture/input/raw-HDR; optical coverage requires A4 validation";
     }
 }

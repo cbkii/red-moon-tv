@@ -76,7 +76,7 @@ android {
         main.java.srcDirs += 'src/main/kotlin'
     }
     lint {
-        disable 'NewApi', 'ExpiredTargetSdkVersion'
+        disable 'ExpiredTargetSdkVersion'
     }
 }
 

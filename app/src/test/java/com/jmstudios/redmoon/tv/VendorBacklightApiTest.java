@@ -11,6 +11,7 @@ public class VendorBacklightApiTest {
     public static class InstalledNative {
         static int level, maximum, packed, setterStatus, writes, update;
         static List<Integer> selectors;
+        protected static String getCurrentInputSourceName_native() { return "HDMI1"; }
         protected static int getConfigValue_native(int input, String key) {
             assertEquals(-1, input);
             return key.equals("g_disp__disp_back_light") ? level : 2;
@@ -58,6 +59,10 @@ public class VendorBacklightApiTest {
         VendorBacklightApi api = new VendorBacklightApi(InstalledNative.class);
         try { api.write(61); fail("must fail"); } catch (IllegalStateException expected) { }
         assertEquals(1, InstalledNative.writes); assertEquals(66, InstalledNative.level);
+    }
+    @Test public void inputAndHdrUseReadOnlyInstalledSignatures() throws Exception {
+        VendorBacklightApi api = new VendorBacklightApi(InstalledNative.class);
+        assertEquals("HDMI1", api.source()); assertEquals(2, api.hdr()); assertEquals(0, InstalledNative.writes);
     }
     @Test public void getterErrorIsNotTreatedAsBrightness() throws Exception {
         InstalledNative.level = -1;

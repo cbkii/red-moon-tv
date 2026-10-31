@@ -25,7 +25,7 @@ def extract_report(text, package):
             report, _ = json.JSONDecoder().raw_decode(text[match.start():])
         except ValueError:
             continue
-        if report.get('schema') in (2, 3) and report.get('package') == package:
+        if report.get('schema') in (2, 3, 4) and report.get('package') == package:
             return report
     return None
 
@@ -160,7 +160,7 @@ class Collector:
         self.ask('other_notes', 'Any remaining error, recovery, playback or warmth observations? Enter to finish.')
         self.sample('final')
 
-    def archive(self, stamp, label, device, duration, guided, interrupted):
+    def archive(self, stamp, label, device, duration, guided, interrupted, read_only=True):
         failed = [r['file'] for r in self.records if r['exit_code']]
         status = 'interrupted' if interrupted else 'warnings' if failed else 'complete'
         if not self.reports:
@@ -168,14 +168,14 @@ class Collector:
         summary = ['Collection: ' + status, 'Package: ' + self.package,
                    'Command failures: ' + (', '.join(failed) or 'none'),
                    'App JSON reports: ' + (', '.join(self.reports) or 'unavailable'),
-                   'Missing report: open the selected app and use Diagnostics > Read, then collect again.\n'
-                   'Older APKs may lack service dumpsys; use Copy bounded diagnostic report separately.',
+                   ('Reports available; inspect sample_at for freshness.' if self.reports else
+                    'No app report: inspect provider errors and verify the installed APK supports the report endpoint.'),
                    'Collection success is NOT native/PWM/fade/playback qualification.',
                    'observations.json contains operator reports, not automatic test verdicts.',
                    'Review logs, notes and package metadata before sharing. installed.apk is optional.']
         (self.destination / 'README.txt').write_text('\n'.join(summary) + '\n', encoding='utf-8')
         manifest = {'schema': 2, 'utc_started': stamp, 'label': label, 'package': self.package,
-                    'device': device, 'duration_seconds': duration, 'read_only': True,
+                    'device': device, 'duration_seconds': duration, 'read_only': read_only,
                     'guided_manual_actions': guided, 'collection_status': status,
                     'physical_validation': 'Not inferred; operator observations are separate evidence',
                     'app_reports': list(self.reports), 'commands': self.records,

@@ -6,17 +6,92 @@
   "package": "com.cbkii.redmoontv",
   "reviewer": "",
   "date": "YYYY-MM-DD",
-  "device": {"model": "50C350KP", "api": 28, "abi": "armeabi-v7a", "fingerprint": ""},
+  "device": {
+    "model": "50C350KP",
+    "api": 28,
+    "abi": "armeabi-v7a",
+    "fingerprint": ""
+  },
   "checks": {
-    "native_read": {"status": "not run", "evidence": ""},
-    "panel_write": {"status": "not run", "evidence": ""},
-    "restoration": {"status": "not run", "evidence": ""},
-    "scheduling": {"status": "not run", "evidence": ""},
-    "lifecycle": {"status": "not run", "evidence": ""},
-    "fades": {"status": "not run", "evidence": ""},
-    "warmth": {"status": "not run", "evidence": ""},
-    "playback": {"status": "not run", "evidence": ""},
-    "stable_package_install": {"status": "not run", "evidence": ""},
-    "rollback": {"status": "not run", "evidence": ""}
+    "native_read": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "panel_write": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "restoration": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "scheduling": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "lifecycle": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "fades": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "warmth": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "playback": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "stable_package_install": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "rollback": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "manual_override": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "fade_persistence": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "brightness_android": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "warmth_android": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "brightness_tuner": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "warmth_tuner": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "brightness_hdmi": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "warmth_hdmi": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "brightness_hdr": {
+      "status": "not run",
+      "evidence": ""
+    },
+    "warmth_hdr": {
+      "status": "not run",
+      "evidence": ""
+    }
   }
 }

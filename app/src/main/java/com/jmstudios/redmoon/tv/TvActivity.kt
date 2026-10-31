@@ -16,12 +16,13 @@ import android.text.TextUtils
 import android.view.*
 import android.widget.*
 import com.jmstudios.redmoon.BuildConfig
+import com.jmstudios.redmoon.R
 import java.time.Instant
 import java.time.ZoneId
 
 /** TV pages with stable focus keys, density-independent targets and no keyboard dependency. */
 class TvActivity : Activity() {
-    private enum class Page(val title: String) { HOME("Home"), SCHEDULE("Schedule"), WARMTH("Warmth"), DIAGNOSTICS("Diagnostics"), SETTINGS("Settings") }
+    private enum class Page(val title: Int) { HOME(R.string.tv_page_home), SCHEDULE(R.string.tv_page_schedule), WARMTH(R.string.tv_page_warmth), DIAGNOSTICS(R.string.tv_page_diagnostics), SETTINGS(R.string.tv_page_settings) }
     private lateinit var prefs: TvPreferences
     private lateinit var rows: LinearLayout
     private lateinit var scroll: ScrollView
@@ -68,8 +69,11 @@ class TvActivity : Activity() {
         super.onSaveInstanceState(out)
     }
     override fun onBackPressed() { if (page != Page.HOME) open(Page.HOME) else super.onBackPressed() }
+    private fun phaseTitle(phase: Phase) = getString(when (phase) {
+        Phase.DAY -> R.string.tv_phase_day; Phase.DUSK -> R.string.tv_phase_dusk; Phase.DIM -> R.string.tv_phase_dim
+    })
     private fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
-    private fun setup() = tvSetupStep(prefs.identityReady, RecoveryJournal.exists(this), prefs.readState,
+    private fun setup() = tvSetupStep(prefs.identityReady, prefs.sessionState() == NativeSessionState.RECOVERY, prefs.readState,
         prefs.nativeLevel, prefs.writeContextReady, prefs.probeComplete, prefs.nativeQualified,
         TvDisplayService.active && prefs.store.getBoolean("probe-active", false))
     private fun stateKey() = listOf(setup(), prefs.rootBackend, prefs.backlightEnabled, prefs.warmthEnabled,
@@ -77,15 +81,15 @@ class TvActivity : Activity() {
     private fun policy() = try { prefs.policy() } catch (_: IllegalArgumentException) { BrightnessPolicy.defaults() }
     private fun summary(): String = when (setup()) {
         TvSetupStep.PROBING -> prefs.status.substringBefore('\n')
-        TvSetupStep.CHECKING -> "Checking installed TV bindings…"
-        TvSetupStep.CONNECT -> "Connect backlight to read the TV's native level. Warmth works independently."
-        TvSetupStep.READING -> if (prefs.rootBackend) "Connecting with root… allow Magisk on the TV if prompted." else "Reading the TV backlight…"
-        TvSetupStep.FAILED -> "Connection failed: ${prefs.store.getString("last-native-error", "open Diagnostics for the first error")?.lineSequence()?.firstOrNull()}"
-        TvSetupStep.READ_ONLY -> "Native level is readable, but range or picture/boot context is unverified. Writes are blocked."
-        TvSetupStep.PROBE -> "Connected. Run the small visible test before enabling backlight control."
-        TvSetupStep.CONFIRM -> "The original level was restored. Confirm what you saw on the panel."
-        TvSetupStep.RECOVERY -> "A saved native session needs attention. Restore it or explicitly keep the current level."
-        TvSetupStep.READY -> if (prefs.backlightEnabled) prefs.status.substringBefore('\n') else "Backlight paused. The current native level is retained."
+        TvSetupStep.CHECKING -> getString(R.string.tv_message_001)
+        TvSetupStep.CONNECT -> getString(R.string.tv_message_002)
+        TvSetupStep.READING -> if (prefs.rootBackend) getString(R.string.tv_message_003) else getString(R.string.tv_message_004)
+        TvSetupStep.FAILED -> getString(R.string.tv_message_006, prefs.store.getString("last-native-error", getString(R.string.tv_message_005))?.lineSequence()?.firstOrNull())
+        TvSetupStep.READ_ONLY -> getString(R.string.tv_message_007)
+        TvSetupStep.PROBE -> getString(R.string.tv_message_008)
+        TvSetupStep.CONFIRM -> getString(R.string.tv_message_009)
+        TvSetupStep.RECOVERY -> getString(R.string.tv_message_010)
+        TvSetupStep.READY -> if (prefs.backlightEnabled) prefs.status.substringBefore('\n') else getString(R.string.tv_message_011)
     }
     private fun refreshState() {
         if (!::rows.isInitialized) return
@@ -106,18 +110,18 @@ class TvActivity : Activity() {
         setContentView(root)
         val rail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, dp(20), 0) }
         root.addView(rail, LinearLayout.LayoutParams(dp(176), -1))
-        rail.addView(label("RED MOON", 21, accent).apply { setTypeface(null, Typeface.BOLD); setPadding(dp(8), dp(8), 0, dp(18)) })
+        rail.addView(label(getString(R.string.tv_text_001), 21, accent).apply { setTypeface(null, Typeface.BOLD); setPadding(dp(8), dp(8), 0, dp(18)) })
         Page.values().forEach { target ->
-            val item = makeButton(target.title, "nav-${target.name}", target == page) { open(target) }
+            val item = makeButton(getString(target.title), "nav-${target.name}", target == page) { open(target) }
             rail.addView(item, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(8) })
             if (target == page) activeNav = item
         }
-        rail.addView(label("A4 display control", 13, muted).apply { setPadding(dp(8), dp(16), 0, 0) })
+        rail.addView(label(getString(R.string.tv_text_002), 13, muted).apply { setPadding(dp(8), dp(16), 0, 0) })
         scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false; isVerticalScrollBarEnabled = false }
         root.addView(scroll, LinearLayout.LayoutParams(0, -1, 1f))
         rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(6), dp(4), dp(6), dp(16)) }
         scroll.addView(rows, FrameLayout.LayoutParams(-1, -2))
-        text(page.title, 30, bold = true)
+        text(getString(page.title), 30, bold = true)
         statusView = text(summary(), 17, muted).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
         when (page) {
             Page.HOME -> home()
@@ -141,152 +145,162 @@ class TvActivity : Activity() {
         hero.addView(nativeValue, LinearLayout.LayoutParams(dp(148), -2))
         val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         hero.addView(detail, LinearLayout.LayoutParams(0, -2, 1f))
-        detail.addView(label("Last confirmed backlight", 18, ink))
-        detail.addView(label(if (prefs.rootBackend) "Root connection" else "APK connection", 15, muted))
+        detail.addView(label(getString(R.string.tv_text_003), 18, ink))
+        detail.addView(label(if (prefs.rootBackend) getString(R.string.tv_message_012) else getString(R.string.tv_message_013), 15, muted))
         val activeProbe = setup() == TvSetupStep.PROBING
         if (activeProbe) {
-            actions(listOf("Test running…" to {}, "Restore now" to { command("revert") })).first().isEnabled = false
+            actions(listOf(getString(R.string.tv_message_014) to {}, getString(R.string.tv_message_015) to { command("revert") })).first().isEnabled = false
         } else when (setup()) {
             TvSetupStep.PROBING -> Unit // Handled above while the live service owns the preview.
-            TvSetupStep.CHECKING, TvSetupStep.READING -> button(if (setup() == TvSetupStep.READING) "Reading backlight…" else "Checking TV…", "home-wait") {}.isEnabled = false
-            TvSetupStep.CONNECT -> button("Connect backlight", "home-connect") { command("read") }
-            TvSetupStep.FAILED, TvSetupStep.READ_ONLY -> actions(listOf("Read again" to { command("read") },
-                (if (prefs.rootBackend) "Use APK connection" else "Try root connection") to { chooseBackend(!prefs.rootBackend) }))
-            TvSetupStep.PROBE -> actions(listOf("Test & restore" to { confirmProbe() }, "Read again" to { command("read") }))
-            TvSetupStep.CONFIRM -> actions(listOf("Confirm visible test" to { confirmNative() }, "Repeat test" to { confirmProbe() }))
-            TvSetupStep.RECOVERY -> actions(listOf("Restore saved level" to { command("restore") }, "Keep current level" to { confirmKeep() }))
-            TvSetupStep.READY -> actions(listOf((if (prefs.backlightEnabled) "Pause backlight" else "Resume schedule") to {
-                command(if (prefs.backlightEnabled) "pause" else "resume") }, "Read again" to { command("read") }))
+            TvSetupStep.CHECKING, TvSetupStep.READING -> button(if (setup() == TvSetupStep.READING) getString(R.string.tv_message_016) else getString(R.string.tv_message_017), "home-wait") {}.isEnabled = false
+            TvSetupStep.CONNECT -> button(getString(R.string.tv_text_004), "home-connect") { command("read") }
+            TvSetupStep.FAILED, TvSetupStep.READ_ONLY -> actions(listOf(getString(R.string.tv_message_018) to { command("read") },
+                (if (prefs.rootBackend) getString(R.string.tv_message_019) else getString(R.string.tv_message_020)) to { chooseBackend(!prefs.rootBackend) }))
+            TvSetupStep.PROBE -> actions(listOf(getString(R.string.tv_message_021) to { confirmProbe() }, getString(R.string.tv_message_022) to { command("read") }))
+            TvSetupStep.CONFIRM -> actions(listOf(getString(R.string.tv_message_023) to { confirmNative() }, getString(R.string.tv_message_024) to { confirmProbe() }))
+            TvSetupStep.RECOVERY -> actions(listOf(getString(R.string.tv_message_025) to { command("restore") }, getString(R.string.tv_message_026) to { confirmKeep() }))
+            TvSetupStep.READY -> actions(listOf((if (prefs.backlightEnabled) getString(R.string.tv_message_027) else getString(R.string.tv_message_028)) to {
+                command(if (prefs.backlightEnabled) "pause" else "resume") }, getString(R.string.tv_message_029) to { command("read") }))
         }
-        if (prefs.backlightEnabled && setup() != TvSetupStep.READY) button("Pause native schedule", "home-pause") { command("pause") }
+        if (prefs.backlightEnabled && setup() != TvSetupStep.READY) button(getString(R.string.tv_text_005), "home-pause") { command("pause") }
         val p = policy()
         val group = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         rows.addView(group, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
         p.settings.forEachIndexed { index, setting ->
-            val card = makeButton("${setting.phase.title}\n${setting.level}%\n${time(setting.startMinute)}", "phase-${setting.phase}") {
+            val card = makeButton(getString(R.string.tv_message_030, phaseTitle(setting.phase), setting.level, time(setting.startMinute)), "phase-${setting.phase}") {
                 command("phase", setting.phase)
             }.apply { gravity = Gravity.CENTER; textSize = 18f; isEnabled = setup() == TvSetupStep.READY && !activeProbe }
             group.addView(card, LinearLayout.LayoutParams(0, dp(86), 1f).apply { if (index > 0) leftMargin = dp(10) })
         }
         val phase = p.at(Instant.now(), ZoneId.systemDefault())
-        text("Scheduled: ${phase.current.phase.title} · next ${phase.next.setting.phase.title} at ${time(phase.next.setting.startMinute)}", 15, muted)
-        text("Phase buttons hold until the next scheduled boundary. Warmth remains independent.", 14, muted)
+        text(getString(R.string.tv_message_031, phaseTitle(phase.current.phase), phaseTitle(phase.next.setting.phase), time(phase.next.setting.startMinute)), 15, muted)
+        text(getString(R.string.tv_text_006), 14, muted)
     }
     private fun schedule() {
-        toggle("Backlight schedule", prefs.backlightEnabled, "schedule-enable", prefs.backlightEnabled || setup() == TvSetupStep.READY) {
+        toggle(getString(R.string.tv_text_007), prefs.backlightEnabled, "schedule-enable", prefs.backlightEnabled || setup() == TvSetupStep.READY) {
             command(if (it) "resume" else "pause")
         }
-        if (setup() != TvSetupStep.READY) button("Finish connection setup on Home", "schedule-setup") { open(Page.HOME) }
-        text(if (scheduleDraft == null) "Select a value to edit. Save applies all three phases together." else "Unsaved changes · all three phases will be validated together", 15, muted)
+        if (setup() != TvSetupStep.READY) button(getString(R.string.tv_text_008), "schedule-setup") { open(Page.HOME) }
+        text(if (scheduleDraft == null) getString(R.string.tv_message_032) else getString(R.string.tv_message_033), 15, muted)
         val settings = scheduleDraft?.toList() ?: policy().settings
         columns(settings) { setting ->
-            text(setting.phase.title, 22, accent, true)
-            text(if (setting.phase == Phase.DAY) "Maximum · 70–100%" else "Minimum · ${setting.phase.minimum}–${setting.phase.maximum}%", 13, muted)
+            text(phaseTitle(setting.phase), 22, accent, true)
+            text(if (setting.phase == Phase.DAY) getString(R.string.tv_message_034) else getString(R.string.tv_message_035, setting.phase.minimum, setting.phase.maximum), 13, muted)
             button("${setting.level}%", "level-${setting.phase}") {
-                number("${setting.phase.title} backlight", setting.level, setting.phase.minimum, setting.phase.maximum, { "$it%" }) { edit(setting.copy(level = it)) }
+                number(getString(R.string.tv_message_036, phaseTitle(setting.phase)), setting.level, setting.phase.minimum, setting.phase.maximum, { "$it%" }) { edit(setting.copy(level = it)) }
             }.textSize = 29f
             button(time(setting.startMinute), "time-${setting.phase}") { clock(setting.startMinute) { edit(setting.copy(startMinute = it)) } }
-            button("Fade ${setting.fadeSeconds}s", "fade-${setting.phase}") { fade(setting.fadeSeconds) { edit(setting.copy(fadeSeconds = it)) } }
+            button(getString(R.string.tv_message_037, setting.fadeSeconds), "fade-${setting.phase}") { fade(setting.fadeSeconds) { edit(setting.copy(fadeSeconds = it)) } }
         }
-        if (scheduleDraft != null) actions(listOf("Save schedule" to {
+        if (scheduleDraft != null) actions(listOf(getString(R.string.tv_message_038) to {
             try { prefs.save(BrightnessPolicy(scheduleDraft!!.toList())); scheduleDraft = null; command(); render() }
-            catch (error: IllegalArgumentException) { message(error.message ?: "Invalid schedule") }
-        }, "Cancel changes" to { scheduleDraft = null; render() }))
-        text("Day ≥ Dusk ≥ Dim. Incoming phase limits apply immediately; fades stay within that phase's band. Times use ${ZoneId.systemDefault()}.", 14, muted)
+            catch (error: IllegalArgumentException) { message(error.message ?: getString(R.string.tv_message_039)) }
+        }, getString(R.string.tv_message_040) to { scheduleDraft = null; render() }))
+        text(getString(if (prefs.strictTransitions) R.string.tv_message_041 else R.string.tv_smooth_limits, ZoneId.systemDefault()), 14, muted)
     }
     private fun warmth() {
         warmthValue = text(prefs.warmthStatus, 18, accent)
         val permission = Settings.canDrawOverlays(this)
-        if (!permission) button("Allow warmth over other apps", "warmth-permission") {
+        if (!permission) button(getString(R.string.tv_text_009), "warmth-permission") {
             try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
-            catch (_: RuntimeException) { message("Open Android Settings → Apps → Special app access → Display over other apps → Red Moon TV.") }
+            catch (_: RuntimeException) { message(getString(R.string.tv_message_042)) }
         }
-        toggle("Warmth schedule", prefs.warmthEnabled, "warmth-enable", permission) { prefs.warmthEnabled = it; command("warmth"); render() }
-        toggle("Use brightness phase times", prefs.linked, "warmth-linked") { prefs.linked = it; command("warmth"); render() }
+        toggle(getString(R.string.tv_text_010), prefs.warmthEnabled, "warmth-enable", permission) { prefs.warmthEnabled = it; command("warmth"); render() }
+        toggle(getString(R.string.tv_text_011), prefs.linked, "warmth-linked") { prefs.linked = it; command("warmth"); render() }
         if (prefs.linked) columns(Phase.values().toList()) { phase ->
-            text(phase.title, 21, accent, true)
-            button("${prefs.warmth(phase)}% warmth", "warmth-$phase") {
-                number("${phase.title} warmth", prefs.warmth(phase), 0, 100, { "$it%" }) {
+            text(phaseTitle(phase), 21, accent, true)
+            button(getString(R.string.tv_message_043, prefs.warmth(phase)), "warmth-$phase") {
+                number(getString(R.string.tv_message_044, phaseTitle(phase)), prefs.warmth(phase), 0, 100, { "$it%" }) {
                     prefs.store.edit().putInt("warmth-$phase", it).apply(); command("warmth"); render()
                 }
             }
         } else {
-            button("Starts ${time(prefs.warmthStart)}", "warmth-start") { clock(prefs.warmthStart) {
-                if (it == prefs.warmthEnd) message("Start and end must differ") else { prefs.warmthStart = it; command("warmth"); render() }
+            button(getString(R.string.tv_message_045, time(prefs.warmthStart)), "warmth-start") { clock(prefs.warmthStart) {
+                if (it == prefs.warmthEnd) message(getString(R.string.tv_message_046)) else { prefs.warmthStart = it; command("warmth"); render() }
             } }
-            button("Ends ${time(prefs.warmthEnd)}", "warmth-end") { clock(prefs.warmthEnd) {
-                if (it == prefs.warmthStart) message("Start and end must differ") else { prefs.warmthEnd = it; command("warmth"); render() }
+            button(getString(R.string.tv_message_047, time(prefs.warmthEnd)), "warmth-end") { clock(prefs.warmthEnd) {
+                if (it == prefs.warmthStart) message(getString(R.string.tv_message_048)) else { prefs.warmthEnd = it; command("warmth"); render() }
             } }
-            button("Strength ${prefs.store.getInt("custom-strength", 40)}%", "warmth-strength") {
-                number("Warmth strength", prefs.store.getInt("custom-strength", 40), 0, 100) {
+            button(getString(R.string.tv_message_049, prefs.store.getInt("custom-strength", 40)), "warmth-strength") {
+                number(getString(R.string.tv_text_012), prefs.store.getInt("custom-strength", 40), 0, 100) {
                     prefs.store.edit().putInt("custom-strength", it).apply(); command("warmth"); render()
                 }
             }
         }
         val colour = prefs.store.getInt("warmth-colour", 40)
-        button("Colour · approximately ${500 + colour * 30} K", "warmth-colour") {
-            number("Warmth colour", colour, 0, 100, { "${500 + it * 30} K" }) {
+        button(getString(R.string.tv_message_050, 500 + colour * 30), "warmth-colour") {
+            number(getString(R.string.tv_text_013), colour, 0, 100, { getString(R.string.tv_message_051, 500 + it * 30) }) {
                 prefs.store.edit().putInt("warmth-colour", it).apply(); command("warmth"); render()
             }
         }
-        button("Warmth fade · ${prefs.warmthFade}s", "warmth-fade") { fade(prefs.warmthFade) { prefs.warmthFade = it; command("warmth"); render() } }
-        button("Warmth off now", "warmth-off") { command("warmth_off"); render() }
-        text("Warmth off never changes the native backlight. Colour is approximate; video-plane coverage still needs the TV.", 14, muted)
+        button(getString(R.string.tv_message_052, prefs.warmthFade), "warmth-fade") { fade(prefs.warmthFade) { prefs.warmthFade = it; command("warmth"); render() } }
+        button(getString(R.string.tv_text_014), "warmth-off") { command("warmth_off"); render() }
+        text(getString(R.string.tv_text_015), 14, muted)
     }
     private fun diagnostics() {
-        text("${packageName}\n${BuildConfig.SOURCE_SHA.take(12)} · ${BuildConfig.BUILD_ID}\n${BuildConfig.BACKEND_PROTOCOL}", 15, muted)
-        actions(listOf("Read backlight" to { command("read") }, "Restart & read" to { command("read_restart") }))
-        if (RecoveryJournal.exists(this)) actions(listOf("Restore saved level" to { command("restore") }, "Keep current level" to { confirmKeep() }))
-        if (prefs.probeComplete && !prefs.nativeQualified) button("Confirm visible panel test", "diag-confirm") { confirmNative() }
-        toggle("Enable fades · persistence checked", prefs.fadesQualified, "diag-fades", prefs.nativeQualified) {
+        text(getString(R.string.tv_message_053, packageName, BuildConfig.SOURCE_SHA.take(12), BuildConfig.BUILD_ID, BuildConfig.BACKEND_PROTOCOL), 15, muted)
+        actions(listOf(getString(R.string.tv_message_054) to { command("read") }, getString(R.string.tv_message_055) to { command("read_restart") }))
+        if (RecoveryJournal.exists(this)) actions(listOf(getString(R.string.tv_message_056) to { command("restore") }, getString(R.string.tv_message_057) to { confirmKeep() }))
+        if (prefs.probeComplete && !prefs.nativeQualified) button(getString(R.string.tv_text_016), "diag-confirm") { confirmNative() }
+        toggle(getString(R.string.tv_text_017), prefs.fadesQualified, "diag-fades", prefs.nativeQualified) {
             if (!it) { prefs.fadesQualified = false; render() }
-            else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Repeated native writes")
-                .setMessage("Enable only after checking vendor persistence and real long-fade/playback behaviour. A restored single probe does not establish repeated-write safety.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Verified") { _, _ -> prefs.fadesQualified = true; render() }.show()
+            else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(getString(R.string.tv_text_018))
+                .setMessage(getString(R.string.tv_text_019))
+                .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_021)) { _, _ -> prefs.fadesQualified = true; render() }.show()
         }
-        button("Copy full diagnostic report", "diag-copy") {
-            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Red Moon TV", DiagnosticsExporter.report(this)))
-            message("Copied. The ADB collector also reads this automatically, even when the display service is stopped.")
+        button(getString(R.string.tv_text_022), "diag-copy") {
+            getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(getString(R.string.tv_message_058), DiagnosticsExporter.report(this)))
+            message(getString(R.string.tv_message_059))
         }
         text(DiagnosticsExporter.report(this), 13, muted).typeface = Typeface.MONOSPACE
     }
     private fun settings() {
-        text("Connection", 22, accent, true)
-        button(if (prefs.rootBackend) "Selected: Root · switch to APK" else "Selected: APK · switch to Root", "settings-backend") { chooseBackend(!prefs.rootBackend) }
-        text("APK is the default. Root requires a rooted TV and an explicit Magisk grant; it is never selected automatically.", 15, muted)
-        button("Pause and transfer control to another build", "settings-transfer") {
-            AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setMessage("Pause, release the live lease and clear this build's saved original? The current native level is retained.")
-                .setNegativeButton("Cancel", null).setPositiveButton("Transfer") { _, _ -> command("keep") }.show()
+        toggle(getString(R.string.tv_smooth_fades), !prefs.strictTransitions, "settings-smooth", !prefs.backlightEnabled) { smooth ->
+            if (!smooth) { prefs.store.edit().putString("transition-mode", "strict").apply(); render() }
+            else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(getString(R.string.tv_smooth_fades)).setMessage(getString(R.string.tv_smooth_explanation))
+                .setNegativeButton(getString(R.string.tv_text_020), null)
+                .setPositiveButton(getString(R.string.tv_smooth_accept)) { _, _ ->
+                    prefs.store.edit().putString("transition-mode", "smooth").apply(); render()
+                }.show()
+        }
+        text(getString(R.string.tv_transition_pause), 14, muted)
+        text(getString(R.string.tv_text_023), 22, accent, true)
+        button(if (prefs.rootBackend) getString(R.string.tv_message_060) else getString(R.string.tv_message_061), "settings-backend") { chooseBackend(!prefs.rootBackend) }
+        text(getString(R.string.tv_text_024), 15, muted)
+        button(getString(R.string.tv_text_025), "settings-transfer") {
+            AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setMessage(getString(R.string.tv_text_026))
+                .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_027)) { _, _ -> command("keep") }.show()
         }
         val external = prefs.store.getBoolean("external-control", false)
-        toggle("External automation", external, "settings-external") { enabled ->
+        toggle(getString(R.string.tv_text_028), external, "settings-external") { enabled ->
             if (!enabled) { prefs.store.edit().putBoolean("external-control", false).apply(); render() }
-            else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Allow installed apps to control Red Moon?")
-                .setMessage("Every installed app can send the fixed Day/Dusk/Dim, Pause, Resume, Warmth Off and Read commands. No shell, probe, restore or qualification commands are exposed.")
-                .setNegativeButton("Keep off", null).setPositiveButton("Allow") { _, _ -> prefs.store.edit().putBoolean("external-control", true).apply(); render() }.show()
+            else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(getString(R.string.tv_text_029))
+                .setMessage(getString(R.string.tv_text_030))
+                .setNegativeButton(getString(R.string.tv_text_031), null).setPositiveButton(getString(R.string.tv_text_032)) { _, _ -> prefs.store.edit().putBoolean("external-control", true).apply(); render() }.show()
         }
-        text("Red Moon TV · ${BuildConfig.VERSION_NAME}\nBuild ${BuildConfig.BUILD_ID} · ${BuildConfig.SOURCE_SHA.take(12)}", 15, muted)
+        text(getString(R.string.tv_message_062, BuildConfig.VERSION_NAME, BuildConfig.BUILD_ID, BuildConfig.SOURCE_SHA.take(12)), 15, muted)
     }
     private fun confirmProbe() {
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Small backlight test")
-            .setMessage("Keep this input and picture mode unchanged. Change the native level by five points, then attempt restoration after 15 seconds. Watch the real panel and Backlight slider. If interrupted, use native TV Settings to recover.")
-            .setNegativeButton("Cancel", null).setPositiveButton("Test & restore") { _, _ -> command("probe") }.show()
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(getString(R.string.tv_text_033))
+            .setMessage(getString(R.string.tv_text_034))
+            .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_035)) { _, _ -> command("probe") }.show()
     }
     private fun confirmNative() {
         if (!prefs.probeComplete) return
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Did the panel change and return?")
-            .setMessage("Confirm only if you saw the physical backlight change and the original level return, and checked current input/picture behaviour. This enables native control on the tested setup. It does not qualify fades or other source/HDR modes.")
-            .setNegativeButton("Not confirmed", null).setPositiveButton("Confirmed") { _, _ -> prefs.nativeQualified = true; render() }.show()
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(getString(R.string.tv_text_036))
+            .setMessage(getString(R.string.tv_text_037))
+            .setNegativeButton(getString(R.string.tv_text_038), null).setPositiveButton(getString(R.string.tv_text_039)) { _, _ -> prefs.nativeQualified = true; render() }.show()
     }
     private fun confirmKeep() {
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Keep the current native level?")
-            .setMessage("Check native TV Settings first. This clears the saved original and leaves scheduling paused; it does not write the panel.")
-            .setNegativeButton("Cancel", null).setPositiveButton("Keep current") { _, _ -> command("keep") }.show()
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(getString(R.string.tv_text_040))
+            .setMessage(getString(R.string.tv_text_041))
+            .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_042)) { _, _ -> command("keep") }.show()
     }
     private fun chooseBackend(root: Boolean) {
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(if (root) "Connect using root?" else "Connect using APK?")
-            .setMessage("Pause backlight scheduling and resolve any saved recovery first. ${if (root) "Read will request Magisk permission on the TV." else "No root is requested."} The connection change resets native qualification. No backlight write occurs.")
-            .setNegativeButton("Cancel", null).setPositiveButton("Connect") { _, _ -> command(if (root) "use_root_read" else "use_apk_read") }.show()
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(if (root) getString(R.string.tv_message_063) else getString(R.string.tv_message_064))
+            .setMessage(getString(R.string.tv_message_067, if (root) getString(R.string.tv_message_065) else getString(R.string.tv_message_066)))
+            .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_043)) { _, _ -> command(if (root) "use_root_read" else "use_apk_read") }.show()
     }
     private fun edit(setting: PhaseSetting) {
         if (scheduleDraft == null) scheduleDraft = policy().settings.toMutableList()
@@ -294,10 +308,6 @@ class TvActivity : Activity() {
         render()
     }
     private fun command(name: String = "reconcile", phase: Phase? = null) {
-        if (name in listOf("pause", "restore", "keep")) prefs.backlightEnabled = false
-        if (name in listOf("resume", "phase") && prefs.nativeQualified) prefs.backlightEnabled = true
-        if (name == "warmth_off") prefs.warmthEnabled = false
-        if (name in listOf("read", "read_restart")) prefs.readStarted()
         TvDisplayService.command(this, name, phase)
         refreshState()
     }
@@ -346,7 +356,7 @@ class TvActivity : Activity() {
         return controls
     }
     private fun toggle(value: String, checked: Boolean, key: String, enabled: Boolean = true, change: (Boolean) -> Unit) =
-        button("$value · ${if (checked) "On" else "Off"}", key) { change(!checked) }.apply { isEnabled = enabled }
+        button(getString(R.string.tv_message_070, value, if (checked) getString(R.string.tv_message_068) else getString(R.string.tv_message_069)), key) { change(!checked) }.apply { isEnabled = enabled }
     private fun <T> columns(items: List<T>, build: (T) -> Unit) {
         val parent = rows
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -361,11 +371,11 @@ class TvActivity : Activity() {
     private fun number(title: String, initial: Int, min: Int, max: Int, format: (Int) -> String = { it.toString() }, save: (Int) -> Unit) {
         var value = initial.coerceIn(min, max)
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(12), dp(24), dp(12)) }
-        box.addView(label("Left / Right adjust · hold for larger steps\nOK saves · Back cancels", 16, muted))
+        box.addView(label(getString(R.string.tv_text_044), 16, muted))
         val display = makeButton(format(value), "number-value") {}.apply { gravity = Gravity.CENTER; textSize = 36f }
         box.addView(display, LinearLayout.LayoutParams(dp(360), dp(88)))
         val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(title).setView(box)
-            .setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ -> save(value) }.create()
+            .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_045)) { _, _ -> save(value) }.create()
         display.setOnClickListener { dialog.dismiss(); save(value) }
         display.setOnKeyListener { _, key, event ->
             if (key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT) {
@@ -382,20 +392,20 @@ class TvActivity : Activity() {
         var hour = initial / 60; var minute = initial % 60
         val box = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(24), dp(12), dp(24), dp(12)) }
         lateinit var h: Button; lateinit var m: Button
-        h = makeButton("Hour %02d".format(hour), "clock-hour") { number("Hour", hour, 0, 23) { hour = it; h.text = "Hour %02d".format(hour) } }
-        m = makeButton("Minute %02d".format(minute), "clock-minute") { number("Minute", minute, 0, 59) { minute = it; m.text = "Minute %02d".format(minute) } }
+        h = makeButton(getString(R.string.tv_text_046).format(hour), "clock-hour") { number(getString(R.string.tv_text_047), hour, 0, 23) { hour = it; h.text = getString(R.string.tv_message_071).format(hour) } }
+        m = makeButton(getString(R.string.tv_text_048).format(minute), "clock-minute") { number(getString(R.string.tv_text_049), minute, 0, 59) { minute = it; m.text = getString(R.string.tv_message_072).format(minute) } }
         box.addView(h, LinearLayout.LayoutParams(dp(180), dp(64))); box.addView(m, LinearLayout.LayoutParams(dp(180), dp(64)).apply { leftMargin = dp(12) })
-        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("24-hour start time").setView(box)
-            .setNegativeButton("Cancel", null).setPositiveButton("Save") { _, _ -> save(hour * 60 + minute) }.create()
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(getString(R.string.tv_text_050)).setView(box)
+            .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_045)) { _, _ -> save(hour * 60 + minute) }.create()
         dialog.show(); h.requestFocus()
     }
     private fun fade(initial: Int, save: (Int) -> Unit) {
-        val presets = arrayOf("Immediate", "5 seconds", "15 seconds", "30 seconds", "60 seconds", "120 seconds", "300 seconds", "600 seconds", "888 seconds", "Custom")
+        val presets = arrayOf(getString(R.string.tv_message_073), getString(R.string.tv_message_074), getString(R.string.tv_message_075), getString(R.string.tv_message_076), getString(R.string.tv_message_077), getString(R.string.tv_message_078), getString(R.string.tv_message_079), getString(R.string.tv_message_080), getString(R.string.tv_message_081), getString(R.string.tv_message_082))
         val values = intArrayOf(0, 5, 15, 30, 60, 120, 300, 600, 888)
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Incoming fade").setItems(presets) { _, i ->
-            if (i == values.size) number("Fade in seconds", initial, 0, 888, save = save) else save(values[i])
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(getString(R.string.tv_text_051)).setItems(presets) { _, i ->
+            if (i == values.size) number(getString(R.string.tv_text_052), initial, 0, 888, save = save) else save(values[i])
         }.show()
     }
-    private fun message(value: String) { AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setMessage(value).setPositiveButton("OK", null).show() }
+    private fun message(value: String) { AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setMessage(value).setPositiveButton(getString(R.string.tv_text_053), null).show() }
     private fun time(minute: Int) = String.format(java.util.Locale.ROOT, "%02d:%02d", minute / 60, minute % 60)
 }

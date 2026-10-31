@@ -19,7 +19,8 @@ class BacklightControllerTest {
         var beforeWrite: (() -> Unit)? = null
         val writes = mutableListOf<Int>()
         override fun context() = picture
-        override fun read() = value
+        var onRead: (() -> Unit)? = null
+        override fun read(): Int { onRead?.invoke(); return value }
         override fun claim() { check(!held); held = true }
         override fun write(value: Int) {
             check(held); beforeWrite?.invoke(); writes.add(value); this.value = value
@@ -94,6 +95,36 @@ class BacklightControllerTest {
         val replacement = BacklightController(native, store, "second")
         try { replacement.restore(); fail() } catch (_: IllegalStateException) {}
         assertEquals(listOf(61), native.writes); assertNotNull(store.record); assertFalse(native.held)
+    }
+
+    @Test fun confirmedScheduleAdoptsAfterRestartAndPreservesOriginal() {
+        val native = Fake(); val store = Memory(); val first = BacklightController(native, store, "first")
+        first.begin("schedule"); first.write(60); first.release()
+        val next = BacklightController(native, store, "second")
+        assertTrue(next.adoptSchedule()); assertEquals("second", store.record!!.session)
+        next.begin("schedule"); next.write(59); assertTrue(next.restore()); assertEquals(66, native.value)
+    }
+    @Test fun steadyObservationFindsManualChangeWithoutAnySetter() {
+        val native = Fake(); val store = Memory(); val controller = BacklightController(native, store, "live")
+        controller.begin("schedule"); controller.write(60); native.value = 55
+        try { controller.observe(); fail() } catch (_: ExternalBacklightChange) {}
+        controller.release(); controller.discard()
+        assertFalse(controller.restore()); assertEquals(55, native.value); assertEquals(listOf(60), native.writes)
+    }
+    @Test fun inputHdrChangeIsDifferentFromManualBrightnessAndCannotRestoreOldContext() {
+        val native = Fake(); val store = Memory(); val controller = BacklightController(native, store, "live")
+        controller.begin("schedule"); controller.write(60); native.picture = "other-input:hdr"
+        try { controller.observe(); fail() } catch (_: BacklightContextChange) {}
+        try { controller.restore(); fail() } catch (_: IllegalStateException) {}
+        assertEquals(listOf(60), native.writes)
+    }
+
+    @Test fun cancellationDuringReadCannotStartAStaleSetter() {
+        val native = Fake(); val store = Memory(); val controller = BacklightController(native, store, "live")
+        controller.begin("schedule"); var allowed = true
+        native.onRead = { allowed = false }
+        try { controller.write(60) { allowed }; fail() } catch (_: java.util.concurrent.CancellationException) {}
+        assertTrue(native.writes.isEmpty()); assertNull(store.record)
     }
 
 }

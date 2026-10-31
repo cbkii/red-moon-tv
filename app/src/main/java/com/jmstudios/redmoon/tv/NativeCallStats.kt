@@ -13,5 +13,7 @@ object NativeCallStats {
         calls++; if (operation == "write") writes++; if (failed) errors++
         totalMs += elapsed; maximumMs = maxOf(maximumMs, elapsed); last = "$backend/$operation: ${elapsed}ms"
     }
+    @Synchronized fun values(): Map<String, Any> = mapOf("calls" to calls, "writes" to writes, "errors" to errors,
+        "total_ms" to totalMs, "maximum_ms" to maximumMs, "last" to last)
     @Synchronized fun snapshot() = "calls=$calls; writes=$writes; errors=$errors; totalMs=$totalMs; maxMs=$maximumMs; last=$last"
 }

@@ -1,0 +1,74 @@
+[
+  {
+    "action": "assert",
+    "field": "native_acknowledged",
+    "equals": true
+  },
+  {
+    "action": "assert",
+    "field": "fades_acknowledged",
+    "equals": true
+  },
+  {
+    "action": "schedule_nearby",
+    "fade": 5
+  },
+  {
+    "action": "command",
+    "name": "resume"
+  },
+  {
+    "action": "wait",
+    "seconds": 10
+  },
+  {
+    "action": "remote",
+    "purpose": "Open native Picture settings and adjust Backlight using SETTINGS/UP/DOWN/LEFT/RIGHT/OK/BACK. DONE continues; do not type the native level."
+  },
+  {
+    "action": "wait",
+    "seconds": 7
+  },
+  {
+    "action": "assert",
+    "field": "session_state",
+    "equals": "MANUAL_HOLD"
+  },
+  {
+    "action": "checkpoint",
+    "label": "manual-hold"
+  },
+  {
+    "action": "force_stop"
+  },
+  {
+    "action": "relaunch"
+  },
+  {
+    "action": "checkpoint",
+    "label": "manual-hold-recreated"
+  },
+  {
+    "action": "assert",
+    "field": "session_state",
+    "equals": "MANUAL_HOLD"
+  },
+  {
+    "action": "wait_boundary",
+    "grace": 15
+  },
+  {
+    "action": "checkpoint",
+    "label": "next-phase-resumed"
+  },
+  {
+    "action": "assert",
+    "field": "manual_hold_until",
+    "equals": 0
+  },
+  {
+    "action": "assert",
+    "field": "scheduled_level_applied",
+    "equals": true
+  }
+]

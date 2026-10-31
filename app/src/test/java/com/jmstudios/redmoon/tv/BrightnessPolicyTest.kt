@@ -73,4 +73,14 @@ class BrightnessPolicyTest {
         assertEquals(Phase.DAY, state.current.phase)
         assertEquals(Phase.DUSK, state.next.setting.phase)
     }
+    @Test fun optionalSmoothCorridorStartsAtActualAndCannotOvershootEitherEndpoint() {
+        policy.settings.forEach { setting -> (0..100).forEach { current ->
+            val fade = BrightnessFade(policy, setting, current, 888000, strictBand = false)
+            if (current != setting.level) assertEquals(current, fade.valueAt(0))
+            for (elapsed in listOf(0L, 1L, 444000L, 887999L, 888000L))
+                assertTrue(fade.valueAt(elapsed) in minOf(current, setting.level)..maxOf(current, setting.level))
+            assertEquals(setting.level, fade.valueAt(888000))
+        } }
+    }
+
 }

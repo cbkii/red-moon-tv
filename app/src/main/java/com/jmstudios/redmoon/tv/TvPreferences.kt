@@ -76,6 +76,11 @@ class TvPreferences(private val context: Context) {
             hash.digest().joinToString("") { "%02x".format(it) }
         } catch (_: Exception) { "unreadable:${file.name}" }
     }
+    fun sessionState(): NativeSessionState = try {
+        nativeSessionState(RecoveryJournal(context).load(), TvDisplayService.liveSession, backlightEnabled,
+            store.contains("manual-hold-until"), TvDisplayService.active && store.getBoolean("probe-active", false),
+            TvDisplayService.runtime().optString("operation") in listOf("transition", "fade", "probe", "test-fade", "restore"))
+    } catch (_: Exception) { NativeSessionState.RECOVERY }
     val probeComplete: Boolean
         get() = identityReady && store.getBoolean("probe-restored", false) && store.getString("probe-signature", "") == signature
     var nativeQualified: Boolean
@@ -103,6 +108,7 @@ class TvPreferences(private val context: Context) {
     var warmthStatus: String
         get() = store.getString("warmth-status", "Warmth off")!!
         set(value) { store.edit().putString("warmth-status", value).apply() }
+    val strictTransitions: Boolean get() = store.getString("transition-mode", "strict") != "smooth"
     fun policy(): BrightnessPolicy = BrightnessPolicy(BrightnessPolicy.defaults().settings.map {
         it.copy(level = store.getInt("${it.phase}-level", it.level),
             startMinute = store.getInt("${it.phase}-start", it.startMinute),

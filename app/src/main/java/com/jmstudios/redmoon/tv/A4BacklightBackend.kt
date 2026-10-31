@@ -124,7 +124,7 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
         nativeContext = result.getString("context")
         val level = result.getInt("level", -1)
         check(level in 0..100) { "Invalid native readback" }
-        NativeSnapshot.record(level, !nativeContext.isNullOrBlank(), false)
+        NativeSnapshot.record(level, !nativeContext.isNullOrBlank(), false, nativeContext)
         return level
     }
     override fun claim() { call("claim") }

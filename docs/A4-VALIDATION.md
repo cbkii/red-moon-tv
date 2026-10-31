@@ -159,3 +159,7 @@ The signed 9fa / 41041255395-1 APK was installed and produced `rmd.txt`: native 
 ## Root fallback and performance evidence
 
 The new root backend is explicitly selectable after pausing and resolving saved recovery; it is not automatic failover. Requalify each backend separately. See [root/performance procedure and collector](A4-ROOT-AND-PERFORMANCE.md). Before declaring root functional, test denied/revoked Magisk access, delayed permission approval beyond the 20-second client deadline, root/JNI death and the five-second worker deadline, pipe closure on app death, standby cleanup, package replacement and cross-variant lease exclusion. Check that failed/late sessions never perform an unexpected setter. Both backends load the installed library and can still fail at namespace/service permissions.
+
+## Subsequent ADB automation implementation
+
+See [A4-ADB-IMPLEMENTATION.md](A4-ADB-IMPLEMENTATION.md) for the new shell/root-only command interface, automated fade/restoration experiments, ADB remote controls, input/lifecycle/manual-override plans, explicit qualification and independent path acceptance. These require a new build from the implementation; the older `a85ddf1aa333` APK supports read-only collection only.

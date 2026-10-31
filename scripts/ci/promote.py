@@ -13,7 +13,9 @@ from qualify import run, check_badging
 
 MARKER = '<!-- red-moon-tv-release-managed -->'
 CHECKS = ('native_read', 'panel_write', 'restoration', 'scheduling', 'lifecycle', 'fades',
-          'warmth', 'playback', 'stable_package_install', 'rollback')
+          'warmth', 'playback', 'stable_package_install', 'rollback', 'manual_override',
+          'fade_persistence', 'brightness_android', 'warmth_android', 'brightness_tuner', 'warmth_tuner',
+          'brightness_hdmi', 'warmth_hdmi', 'brightness_hdr', 'warmth_hdr')
 
 
 def acceptance(record, info):

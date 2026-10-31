@@ -2,7 +2,6 @@
 package com.jmstudios.redmoon.tv
 
 import java.time.*
-import kotlin.math.roundToInt
 
 enum class Phase(val title: String, val minimum: Int, val maximum: Int) {
     DAY("Day", 70, 100), DUSK("Dusk", 10, 80), DIM("Dim", 1, 20)
@@ -44,27 +43,17 @@ class BrightnessPolicy(val settings: List<PhaseSetting>) {
 }
 
 /** Quantised, strict incoming-band fade. Native calls are never animation-frame driven. */
-class BrightnessFade(policy: BrightnessPolicy, val setting: PhaseSetting, current: Int, requestedDurationMillis: Long) {
-    private val start = policy.constrain(setting, current)
-    private val allowed = policy.band(setting)
+class BrightnessFade(policy: BrightnessPolicy, val setting: PhaseSetting, current: Int, requestedDurationMillis: Long, strictBand: Boolean = true) {
+    private val start = if (strictBand) policy.constrain(setting, current) else current
+    private val allowed = if (strictBand) policy.band(setting) else minOf(current, setting.level)..maxOf(current, setting.level)
     init { require(current in 0..100 && requestedDurationMillis in 0..888000) }
     val durationMillis = if (start == setting.level) 0L else requestedDurationMillis
     /** Next changed integer, capped at two writes/second; no duplicate 500 ms polling. */
     fun nextDelay(elapsedMillis: Long): Long {
-        if (elapsedMillis >= durationMillis) return 500L
-        val current = valueAt(elapsedMillis)
-        var low = elapsedMillis + 1
-        var high = durationMillis
-        while (low < high) {
-            val middle = (low + high) / 2
-            if (valueAt(middle) == current) low = middle + 1 else high = middle
-        }
-        return maxOf(500L, low - elapsedMillis)
+        return QuantisedFade.nextDelay(start, setting.level, durationMillis, elapsedMillis)
     }
-    fun valueAt(elapsedMillis: Long): Int {
-        val fraction = if (durationMillis == 0L) 1.0 else (elapsedMillis.toDouble() / durationMillis).coerceIn(0.0, 1.0)
-        return (start + (setting.level - start) * fraction).roundToInt().coerceIn(allowed)
-    }
+    fun valueAt(elapsedMillis: Long): Int =
+        QuantisedFade.value(start, setting.level, durationMillis, elapsedMillis).coerceIn(allowed)
 }
 
 /** Independent on/off window with the same skipped/repeated local-time rules. */

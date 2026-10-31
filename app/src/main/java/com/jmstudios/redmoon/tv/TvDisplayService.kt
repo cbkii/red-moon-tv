@@ -10,6 +10,7 @@ import android.util.Log
 import com.jmstudios.redmoon.*
 import java.time.*
 import java.util.UUID
+import org.json.JSONObject
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -21,7 +22,11 @@ class TvDisplayService : Service() {
     private val timerLock = Any()
     private var fadeTask: ScheduledFuture<*>? = null
     private val generation = AtomicInteger()
-    private val pendingNative = AtomicInteger()
+    private val queue = ControllerQueue(worker, { fail(it) }, { main.post { stopIfIdle(); scheduleIdleClose() } })
+    private val session = UUID.randomUUID().toString()
+    private var monitorTask: ScheduledFuture<*>? = null
+    private var idleTask: ScheduledFuture<*>? = null
+    @Volatile private var operation = "idle"
     @Volatile private var destroyed = false
     private lateinit var prefs: TvPreferences
     private lateinit var controller: BacklightController
@@ -33,18 +38,40 @@ class TvDisplayService : Service() {
     @Volatile private var rebaseAfterExplicitResume = false
     private var overridePhase: Phase? = null
     private var overrideUntil: Instant? = null
-    private var appliedPhase: Phase? = null
     @Volatile private var screenOn = true
     private fun cancelTransition(): Int {
         val token = generation.incrementAndGet()
-        synchronized(timerLock) { fadeTask?.cancel(false); fadeTask = null }
+        synchronized(timerLock) {
+            fadeTask?.cancel(false); fadeTask = null
+            monitorTask?.cancel(false); monitorTask = null
+        }
         return token
+    }
+    private fun scheduleIdleClose() {
+        if (destroyed) return
+        idleTask?.cancel(false)
+        idleTask = worker.schedule({
+            if (queue.count == 0 && !controller.hasClaim() && !preview) controller.close()
+        }, 2, TimeUnit.SECONDS)
+    }
+    private fun monitor(token: Int) {
+        synchronized(timerLock) {
+            monitorTask?.cancel(false)
+            if (!destroyed && screenOn && token == generation.get()) monitorTask = worker.schedule({
+                if (token == generation.get() && screenOn && !destroyed) submit("monitor") {
+                    if (token == generation.get() && controller.hasClaim()) {
+                        controller.observe()
+                        monitor(token)
+                    }
+                }
+            }, 5, TimeUnit.SECONDS)
+        }
     }
     private fun nextStep(token: Int, delay: Long, step: () -> Unit) {
         synchronized(timerLock) {
             if (!destroyed && token == generation.get()) {
                 fadeTask?.cancel(false)
-                fadeTask = worker.schedule({ if (token == generation.get() && !destroyed) submit(step) }, delay, TimeUnit.MILLISECONDS)
+                fadeTask = worker.schedule({ if (token == generation.get() && !destroyed) submit("fade", work = step) }, delay, TimeUnit.MILLISECONDS)
             }
         }
     }
@@ -59,13 +86,13 @@ class TvDisplayService : Service() {
                 clearWarmth()
                 status("Standby: native writes suspended")
                 // Lifecycle cleanup must not be dropped by the interactive-request queue limit.
-                worker.execute { controller.close() } // Retain recovery evidence.
+                submit("standby-close", true) { controller.close() } // Retain recovery evidence.
             }
         }
     }
     override fun onCreate() {
         super.onCreate()
-        active = true
+        active = true; liveSession = session; instance = this
         prefs = TvPreferences(this)
         // A previous process may have died during a read. A new lifecycle owner
         // must not advertise that old in-flight operation, including boot for warmth.
@@ -73,7 +100,8 @@ class TvDisplayService : Service() {
             prefs.store.edit().remove("native-read-state").apply()
         prefs.prepareIdentity { if (!destroyed) reconcile(false) }
         controller = newController()
-        recoveryRequired = RecoveryJournal.exists(this)
+        recoveryRequired = try { RecoveryJournal(this).load()?.let { it.pending != null || it.kind != "schedule" } == true }
+            catch (_: Exception) { true }
         prefs.store.edit().putBoolean("probe-active", false).apply()
         if (recoveryRequired) {
             prefs.backlightEnabled = false
@@ -92,7 +120,11 @@ class TvDisplayService : Service() {
         registerReceiver(screens, IntentFilter().apply { addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF) })
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val command = intent?.getStringExtra("command") ?: "reconcile"
+        executeCommand(intent?.getStringExtra("command") ?: "reconcile", intent)
+        main.post { stopIfIdle() }
+        return START_STICKY
+    }
+    private fun executeCommand(command: String, intent: Intent?) {
         when (command) {
             "use_root", "use_apk", "use_root_read", "use_apk_read" -> {
                 if (prefs.backlightEnabled || preview || overridePhase != null) status("Pause native scheduling/preview before changing backend")
@@ -107,27 +139,28 @@ class TvDisplayService : Service() {
             }
             "read", "read_restart" -> {
                 if (command == "read_restart" && (prefs.backlightEnabled || preview)) status("Pause scheduling/preview before restarting the native worker")
-                else submit {
+                else submit("read") {
                     if (command == "read_restart") controller.close()
                     readNative()
                 }
             }
+            "adb" -> handleAdb(requireNotNull(intent))
             "probe" -> probe()
             "revert", "restore" -> restore()
             "keep" -> {
                 cancelTransition(); preview = false; main.removeCallbacks(revertPreview)
                 prefs.backlightEnabled = false; clearOverride()
-                submit { controller.release(); controller.discard(); recoveryRequired = false; prefs.store.edit().putBoolean("native-blocked", false).remove("manual-hold-until").apply(); status("Recovery cleared by user; current native level retained") }
+                submit("keep", true) { controller.release(); controller.discard(); recoveryRequired = false; prefs.store.edit().putBoolean("native-blocked", false).remove("manual-hold-until").apply(); status("Recovery cleared by user; current native level retained") }
             }
             "pause" -> {
                 clearOverride(); prefs.backlightEnabled = false; cancelTransition()
-                if (preview) revertPreview.run() else submit { controller.release(); status("Backlight paused; current level retained") }
+                if (preview) revertPreview.run() else submit("pause", true) { controller.release(); status("Backlight paused; current level retained") }
                 reconcile(false)
             }
             "phase", "resume" -> {
                 if (prefs.nativeQualified && !recoveryRequired && !preview) {
                     val phase = if (command == "phase") Phase.values().firstOrNull { it.name == intent?.getStringExtra("phase") } else null
-                    if (command == "phase" && phase == null) { status("Invalid phase command"); return START_STICKY }
+                    if (command == "phase" && phase == null) { status("Invalid phase command"); return }
                     rebaseAfterExplicitResume = prefs.store.contains("manual-hold-until")
                     clearOverride(); prefs.backlightEnabled = true
                     prefs.store.edit().putBoolean("native-blocked", false).remove("manual-hold-until").apply()
@@ -143,13 +176,105 @@ class TvDisplayService : Service() {
             "warmth_off" -> { prefs.warmthEnabled = false; warmthOnly(true) }
             else -> reconcile(command != "boundary")
         }
-        main.post { stopIfIdle() }
-        return START_STICKY
+    }
+    private fun handleAdb(intent: Intent) {
+        val name = intent.getStringExtra("adb-command") ?: return
+        val data = JSONObject(intent.getStringExtra("adb-data") ?: "{}")
+        try {
+            TvAdbControl.validate(name, data)
+            prefs.store.edit().putString("adb-last-request", intent.getStringExtra("adb-id"))
+                .remove("adb-error").apply()
+            when (name) {
+                "configure" -> {
+                    require(!preview && !prefs.backlightEnabled) { "Pause before configuring" }
+                    val policy = TvAdbControl.policy(data)
+                    val start = data.optInt("warmth_start", prefs.warmthStart)
+                    val end = data.optInt("warmth_end", prefs.warmthEnd)
+                    require(start != end) { "Warmth start/end must differ" }
+                    if (policy != null) prefs.save(policy)
+                    prefs.store.edit().apply {
+                        if (data.has("transition_mode")) putString("transition-mode", data.getString("transition_mode"))
+                        for ((json, pref) in listOf("warmth" to "warmth", "linked" to "linked"))
+                            if (data.has(json)) putBoolean(pref, data.getBoolean(json))
+                        for ((json, pref) in listOf("warmth_start" to "warmth-start", "warmth_end" to "warmth-end",
+                            "warmth_fade" to "warmth-fade", "strength" to "custom-strength", "colour" to "warmth-colour"))
+                            if (data.has(json)) putInt(pref, data.getInt(json))
+                    }.commit()
+                    warmthOnly(); status("ADB configuration applied")
+                }
+                "save_config" -> {
+                    check(!prefs.store.contains("adb-config-backup")) { "An ADB configuration backup already exists" }
+                    val snapshot = JSONObject().put("backlight", prefs.backlightEnabled)
+                    val values = JSONObject()
+                    prefs.store.all.filterKeys { key -> key in setOf("warmth", "linked", "warmth-start", "warmth-end", "warmth-fade", "custom-strength", "warmth-colour", "transition-mode") ||
+                        Phase.values().any { key in listOf("$it-level", "$it-start", "$it-fade", "warmth-$it") } }.forEach { (key, value) -> values.put(key, value) }
+                    snapshot.put("values", values)
+                    check(prefs.store.edit().putString("adb-config-backup", snapshot.toString()).commit())
+                }
+                "restore_config" -> {
+                    check(!preview && !prefs.backlightEnabled && queue.count == 0) { "Restore/Keep the test and pause first" }
+                    val saved = JSONObject(prefs.store.getString("adb-config-backup", null) ?: error("No ADB configuration backup"))
+                    val keys = setOf("warmth", "linked", "warmth-start", "warmth-end", "warmth-fade", "custom-strength", "warmth-colour", "transition-mode") +
+                        Phase.values().flatMap { listOf("$it-level", "$it-start", "$it-fade", "warmth-$it") }
+                    val edit = prefs.store.edit(); keys.forEach { edit.remove(it) }
+                    val values = saved.getJSONObject("values")
+                    values.keys().forEach { key -> when (val value = values.get(key)) { is Boolean -> edit.putBoolean(key, value); is Number -> edit.putInt(key, value.toInt()); is String -> edit.putString(key, value) } }
+                    check(edit.remove("adb-config-backup").commit())
+                    prefs.backlightEnabled = saved.getBoolean("backlight"); reconcile(true)
+                }
+                "acknowledge" -> {
+                    check(prefs.probeComplete) { "A successful restored native test is required first" }
+                    prefs.nativeQualified = true
+                    prefs.fadesQualified = data.optBoolean("fades", false)
+                    status("Operator acknowledgement recorded; exact APK/path acceptance remains separate")
+                }
+                "close_worker" -> {
+                    check(!preview && !prefs.backlightEnabled) { "Pause before closing worker" }
+                    submit("close", true) { controller.close() }
+                }
+                "test_fade" -> testFade(data.getInt("seconds"), data.getInt("delta"))
+                "probe" -> check(probe()) { "Probe prerequisites or queue admission not satisfied" }
+                else -> executeCommand(name, Intent().putExtra("phase", data.optString("phase", "")))
+            }
+        } catch (error: Exception) {
+            prefs.store.edit().putString("adb-error", error.message ?: error.javaClass.simpleName).apply()
+            status("ADB request rejected: ${error.message}")
+        }
+    }
+    /** Bounded experiment, available before fade acknowledgement. Always attempts restore. */
+    private fun testFade(seconds: Int, delta: Int) {
+        check(prefs.identityReady && screenOn && !preview && !recoveryRequired && !prefs.backlightEnabled) { "Read, pause and resolve recovery before testing" }
+        val token = cancelTransition()
+        check(submit("test-fade") {
+            if (!screenOn || token != generation.get()) return@submit
+            check(controller.pendingRecovery() == null) { "Resolve saved ownership before testing" }
+            preview = true
+            prefs.store.edit().putBoolean("probe-active", true).putBoolean("probe-restored", false).apply()
+            controller.release()
+            val start = controller.begin("probe")
+            val target = (start + delta).coerceIn(1, 100)
+            require(target != start) { "Test target equals current brightness" }
+            val began = SystemClock.elapsedRealtime()
+            main.postDelayed(revertPreview, seconds * 1000L + 15000)
+            prefs.store.edit().putLong("test-start-at", System.currentTimeMillis()).putInt("test-seconds", seconds)
+                .putInt("test-from", start).putInt("test-target", target).apply()
+            fun step() {
+                if (token != generation.get() || destroyed || !screenOn) return
+                val elapsed = SystemClock.elapsedRealtime() - began
+                controller.observe()
+                val value = QuantisedFade.value(start, target, seconds * 1000L, elapsed)
+                controller.write(value) { token == generation.get() && screenOn && !destroyed }
+                if (elapsed < seconds * 1000L) nextStep(token,
+                    QuantisedFade.nextDelay(start, target, seconds * 1000L, elapsed)) { step() }
+                else main.postDelayed(revertPreview, 5000)
+            }
+            step()
+        }) { "Native queue busy; test not started" }
     }
     @Volatile private var lastStatus = ""
     private fun newController() = BacklightController(
         if (prefs.rootBackend) A4RootBacklightBackend(this) else A4BacklightBackend(this),
-        RecoveryJournal(this), UUID.randomUUID().toString())
+        RecoveryJournal(this), session)
     private fun status(message: String, persist: Boolean = true) {
         if (lastStatus == message) return
         lastStatus = message
@@ -162,37 +287,61 @@ class TvDisplayService : Service() {
         status("Reading native backlight via ${if (prefs.rootBackend) "root (Magisk may prompt)" else "APK worker"}; no panel write")
         val level = controller.read()
         prefs.readFinished()
+        prefs.store.edit().remove("current-native-error").apply()
         status("Native backlight $level / 100. ${if (prefs.writeContextReady) "Ready for a visible test." else "Read only: range or picture/boot context is unavailable."}")
     }
     private fun fail(error: Exception) {
         prefs.store.edit().putString("native-read-state", "failed").putBoolean("probe-active", false).apply()
         cancelTransition()
+        val message = error.message ?: error.javaClass.simpleName
         val edit = prefs.store.edit().putBoolean("native-blocked", true)
-        if (error is ExternalBacklightChange) {
-            val until = try { prefs.policy().at(Instant.now(), ZoneId.systemDefault()).next.instant.toEpochMilli() } catch (_: IllegalArgumentException) { null }
-            if (until != null) edit.putLong("manual-hold-until", until) else edit.remove("manual-hold-until")
-        } else { edit.remove("manual-hold-until"); recoveryRequired = RecoveryJournal.exists(this) }
-        edit.putString("last-native-error", error.message ?: error.javaClass.simpleName).commit() // Failure prohibition must survive ordinary process restart.
-        if (!RecoveryJournal.exists(this)) preview = false
-        status("Native control stopped: ${error.message}. No automatic setter retry.\n${prefs.store.getString("native-diagnostics", "No loader diagnostics")}")
         try { controller.release() } catch (_: Exception) { controller.close() }
+        val safe = try { controller.pendingRecovery()?.pending == null } catch (_: Exception) { false }
+        var event: String? = null
+        if (error is ExternalBacklightChange && safe) {
+            val until = try { prefs.policy().at(Instant.now(), ZoneId.systemDefault()).next.instant.toEpochMilli() }
+                catch (_: IllegalArgumentException) { prefs.backlightEnabled = false; null }
+            // Ownership is relinquished. Neither stale cleanup nor Restore may undo this adjustment.
+            controller.discard(); recoveryRequired = false; preview = false
+            if (until != null) edit.putLong("manual-hold-until", until) else edit.remove("manual-hold-until")
+            event = "Manual brightness retained until the next scheduled phase or explicit Resume"
+        } else if (error is BacklightContextChange && safe && !preview) {
+            controller.discard(); recoveryRequired = false
+            edit.remove("manual-hold-until").putBoolean("native-blocked", false)
+            event = "Picture/input/HDR context changed; old restoration ownership discarded"
+            main.postDelayed({ if (!destroyed && screenOn) reconcile(true) }, 1000)
+        } else {
+            edit.remove("manual-hold-until"); recoveryRequired = RecoveryJournal.exists(this)
+        }
+        if (!RecoveryJournal.exists(this)) preview = false
+        if (event != null) {
+            prefs.readFinished()
+            edit.putString("native-read-state", "ready").remove("current-native-error")
+                .putString("last-native-event", event).putLong("last-native-event-at", System.currentTimeMillis())
+        } else edit.putString("current-native-error", message).putString("last-native-error", message)
+            .putLong("last-native-error-at", System.currentTimeMillis())
+        edit.commit()
+        operation = "idle"
+        status(event ?: "Native control stopped: $message. No automatic setter retry.")
+        controller.close()
     }
-    private fun submit(work: () -> Unit) {
-        if (destroyed) return
-        if (pendingNative.incrementAndGet() > 3) {
-            pendingNative.decrementAndGet(); status("Native operation pending; wait for its result"); return
+    private fun submit(key: String = "interactive", critical: Boolean = false, work: () -> Unit): Boolean {
+        if (destroyed) return false
+        val token = generation.get()
+        val admitted = queue.submit(key, critical) {
+            if (!critical && token != generation.get()) return@submit
+            operation = key
+            try { work() } finally { operation = "idle" }
         }
-        worker.execute {
-            try { work() } catch (error: Exception) { fail(error) }
-            finally { pendingNative.decrementAndGet(); main.post { stopIfIdle() } }
-        }
+        if (!admitted && key !in listOf("monitor", "fade")) status("Native request coalesced or busy: $key")
+        return admitted
     }
     private fun clearOverride() {
         overridePhase = null; overrideUntil = null
         prefs.store.edit().remove("override-phase").remove("override-until").apply()
     }
     private fun stopIfIdle() {
-        if (!destroyed && pendingNative.get() == 0 && !prefs.backlightEnabled && !prefs.warmthEnabled && overridePhase == null && !preview && (overlay == null || overlay!!.profile.isOff)) stopSelf()
+        if (!destroyed && queue.count == 0 && !prefs.backlightEnabled && !prefs.warmthEnabled && overridePhase == null && !preview && (overlay == null || overlay!!.profile.isOff)) stopSelf()
     }
     private fun reconcile(force: Boolean) {
         val policy = try { prefs.policy() } catch (e: IllegalArgumentException) { status("Invalid schedule: ${e.message}"); return }
@@ -206,7 +355,8 @@ class TvDisplayService : Service() {
         if (!prefs.identityReady) { status("Checking installed vendor identity; no native writes"); return }
         if (!prefs.nativeQualified) { status("Native qualification required; no backlight writes"); return }
         val setting = overridePhase?.let { p -> policy.settings.first { it.phase == p } } ?: state.current
-        val newBoundary = appliedPhase != setting.phase
+        val boundaryKey = "${state.next.instant.toEpochMilli()}:${setting.phase}"
+        val newBoundary = prefs.store.getString("active-boundary", "") != boundaryKey
         val permission = NativeWriteGate.decide(prefs.store.getBoolean("native-blocked", false),
             prefs.store.getLong("manual-hold-until", 0).takeIf { it > 0 }, now.toEpochMilli(), recoveryRequired)
         if (permission == WritePermission.BLOCK) {
@@ -217,24 +367,31 @@ class TvDisplayService : Service() {
         }
         val releaseManual = permission == WritePermission.RELEASE_MANUAL_HOLD
         if (!force && !newBoundary && !releaseManual) return
-        appliedPhase = setting.phase
         val token = cancelTransition()
-        submit {
-            if (token != generation.get()) return@submit
+        submit("transition", true) {
+            if (token != generation.get() || !screenOn) return@submit
             controller.release()
-            if (releaseManual || rebaseAfterExplicitResume) {
+            val prior = controller.pendingRecovery()
+            if (prior != null && prior.session != session && !newBoundary && !releaseManual && !rebaseAfterExplicitResume)
+                controller.adoptSchedule()
+            if (releaseManual || rebaseAfterExplicitResume || newBoundary) {
                 check(controller.pendingRecovery()?.pending == null) { "Uncertain write still requires explicit recovery" }
                 controller.discard(); rebaseAfterExplicitResume = false
                 prefs.store.edit().remove("manual-hold-until").apply()
             }
+            if (setting.fadeSeconds > 0 && !prefs.fadesQualified) {
+                prefs.backlightEnabled = false
+                status("Configured fade requires qualification; use the ADB fade test. Schedule is paused, not replaced with an instant change.")
+                return@submit
+            }
             val current = controller.begin("schedule")
-            prefs.store.edit().putBoolean("native-blocked", false).apply()
-            val duration = if (prefs.fadesQualified) setting.fadeSeconds * 1000L else 0L
-            val fade = BrightnessFade(policy, setting, current, duration)
+            prefs.store.edit().putBoolean("native-blocked", false).putString("active-boundary", boundaryKey).remove("current-native-error").apply()
+            val duration = setting.fadeSeconds * 1000L
+            val fade = BrightnessFade(policy, setting, current, duration, prefs.strictTransitions)
             status("${setting.phase.title} transition: confirmed native $current → ${setting.level}")
             val began = SystemClock.elapsedRealtime()
             val session = TransitionSession(fade, current,
-                { SystemClock.elapsedRealtime() - began }, { token != generation.get() || !screenOn || destroyed }) { controller.write(it) }
+                { SystemClock.elapsedRealtime() - began }, { token != generation.get() || !screenOn || destroyed }) { controller.write(it) { token == generation.get() && screenOn && !destroyed } }
             fun step() {
                 if (token != generation.get() || destroyed) return
                 val running = session.tick()
@@ -242,7 +399,7 @@ class TvDisplayService : Service() {
                     if (!prefs.fadesQualified && setting.fadeSeconds > 0) "; fade disabled pending persistence qualification" else "", persist = !running)
                 if (running) nextStep(token, fade.nextDelay(SystemClock.elapsedRealtime() - began)) { step() }
             }
-            step()
+            step(); monitor(token)
         }
     }
     private fun scheduleNext(nextPhase: Instant) {
@@ -316,22 +473,23 @@ class TvDisplayService : Service() {
         prefs.warmthStatus = if (strength == 0) "Warmth off" else "Warmth $strength%; playback coverage unverified"
     }
     private val revertPreview = Runnable { if (screenOn && preview) restore() }
-    private fun probe() {
-        if (!prefs.identityReady) { status("Wait for the installed vendor identity check"); return }
-        if (!screenOn || preview || recoveryRequired) { status("Wake the TV and resolve any recovery record before probing"); return }
-        if (prefs.backlightEnabled || overridePhase != null) { status("Pause scheduling before a probe"); return }
+    private fun probe(): Boolean {
+        if (!prefs.identityReady) { status("Wait for the installed vendor identity check"); return false }
+        if (!screenOn || preview || recoveryRequired) { status("Wake the TV and resolve any recovery record before probing"); return false }
+        if (prefs.backlightEnabled || overridePhase != null) { status("Pause scheduling before a probe"); return false }
         cancelTransition()
-        preview = true
-        prefs.store.edit().putBoolean("probe-restored", false).apply()
-        prefs.store.edit().putBoolean("probe-active", true).apply()
-        submit {
+        val token = generation.get()
+        return submit("probe") {
+            if (!screenOn || token != generation.get()) return@submit
+            preview = true
+            prefs.store.edit().putBoolean("probe-restored", false).putBoolean("probe-active", true).apply()
             controller.release()
             // A previous schedule's confirmed saved original must be explicitly kept/restored.
             check(controller.pendingRecovery() == null) { "Keep or restore the saved session before probing" }
             val saved = controller.begin("probe")
             val target = if (saved > 5) saved - 5 else saved + 5
             try {
-                controller.write(target)
+                controller.write(target) { token == generation.get() && screenOn && !destroyed }
                 status("Probe $saved → $target confirmed. Inspect panel and native slider; reverting in 15 seconds.")
             } finally {
                 if (!destroyed) main.postDelayed(revertPreview, 15000)
@@ -342,7 +500,8 @@ class TvDisplayService : Service() {
         if (!screenOn) { status("Restore deferred until the TV is awake"); return }
         cancelTransition(); prefs.backlightEnabled = false; clearOverride()
         main.removeCallbacks(revertPreview)
-        submit {
+        submit("restore", true) {
+            if (!screenOn) { status("Restore deferred until wake"); return@submit }
             val kind = controller.pendingRecovery()?.kind
             try {
                 if (controller.restore()) {
@@ -355,8 +514,9 @@ class TvDisplayService : Service() {
         }
     }
     override fun onDestroy() {
-        active = false
+        active = false; liveSession = null; instance = null
         destroyed = true; cancelTransition()
+        idleTask?.cancel(false)
         main.removeCallbacksAndMessages(null); clearWarmth(); unregisterReceiver(screens)
         // Let a bounded in-flight call settle before releasing its worker and lease.
         closeControllerExecutor(worker) { controller.close() }
@@ -365,9 +525,16 @@ class TvDisplayService : Service() {
     override fun onBind(intent: Intent?) = null
     override fun dump(fd: java.io.FileDescriptor, writer: java.io.PrintWriter, args: Array<out String>) {
         writer.println(DiagnosticsExporter.report(this))
-        writer.println("pending_native=${pendingNative.get()}; queue=${worker.queue.size}; screen_on=$screenOn; preview=$preview")
+        writer.println("operation=$operation; pending_native=${queue.count}; queue=${worker.queue.size}; screen_on=$screenOn; preview=$preview")
     }
     companion object {
+        @Volatile private var instance: TvDisplayService? = null
+        fun runtime(): JSONObject = instance?.let {
+            JSONObject().put("operation", it.operation).put("pending", it.queue.count).put("screen_on", it.screenOn)
+                .put("preview", it.preview).put("generation", it.generation.get())
+        } ?: JSONObject().put("operation", "stopped").put("pending", 0)
+        @Volatile var liveSession: String? = null
+            private set
         @Volatile var active: Boolean = false
             private set
         private const val CHANNEL = "tv-display"
