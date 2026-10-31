@@ -67,7 +67,7 @@ Temporary actions do not rewrite saved phase values, schedule times or enable fl
 
 Brightness uses the explicit temporary phase if selected, otherwise the clock's current phase. Day's allowed band is 70..saved Day cap; Dusk is saved Dusk floor..80; Dim is saved Dim floor..20. Relative changes clamp to that band; absolute targets outside it reject. Choosing a temporary target does not redefine the saved cap/floor. Manual native adjustments retain the existing A4 override policy; optional schedule enforcement follows the base branch's explicit user setting.
 
-Relative presses accumulate from the latest desired target (including during a fade). Absolute requests supersede queued targets. Superseded requests end as `cancelled`; a request is `applied` only after native target readback or warmth-window application. Cancellation has guaranteed cleanup admission, never clears an uncertain write, and cannot assert an in-flight vendor call was undone.
+The first relative brightness press refreshes a missing/stale native sample (older than five seconds). Subsequent relative presses accumulate from the latest desired target (including during a fade). Absolute requests supersede queued targets. Superseded requests end as `cancelled`; a request is `applied` only after native target readback or warmth-window application. Cancellation has guaranteed cleanup admission, never clears an uncertain write, and cannot assert an in-flight vendor call was undone.
 
 ## Results and conditional macros
 

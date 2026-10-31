@@ -278,7 +278,7 @@ class TvDisplayService : Service() {
         warmthRequest = null; warmthFadeOverride = null
         automation.result(id, "warmth", state, detail)
     }
-    private fun handleAutomation(intent: Intent) {
+    private fun handleAutomation(intent: Intent, refreshed: Boolean = false) {
         val id = intent.getStringExtra("automation-id") ?: return
         try {
             val extras = intent.getBundleExtra("automation-extras") ?: error("Missing request")
@@ -299,6 +299,24 @@ class TvDisplayService : Service() {
                         main.removeCallbacks(timeout); handleAutomation(intent)
                     }
                 }
+                return
+            }
+            val sampleAge = NativeSnapshot.value?.let { SystemClock.elapsedRealtime() - it.elapsed }
+            if (AutomationContract.needsRelativeRead(r.command, automation.temporary("brightness")?.optString("kind") == "value", sampleAge) &&
+                screenOn && prefs.identityReady && prefs.nativeQualified && !recoveryRequired && !preview) {
+                check(!refreshed) { "Fresh native sample expired before dispatch" }
+                check(submit("automation-read-${r.id}", true) {
+                    try {
+                        controller.read(); prefs.readFinished()
+                        main.post {
+                            if (!destroyed) handleAutomation(intent, true)
+                            else automation.result(id, "brightness", "cancelled", "Service stopped")
+                        }
+                    } catch (error: Exception) {
+                        automation.result(id, "brightness", "failed", "Fresh native reading unavailable")
+                        throw error
+                    }
+                }) { "Relative read unavailable" }
                 return
             }
             when (r.command) {

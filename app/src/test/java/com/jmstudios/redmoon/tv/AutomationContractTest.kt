@@ -99,4 +99,13 @@ class AutomationContractTest {
             assertFalse(it in AutomationContract.commands)
         }
     }
+    @Test fun firstRelativePressRequiresFreshReadWhileHeldPressesUseDesiredTarget() {
+        assertTrue(AutomationContract.needsRelativeRead("brightness_adjust", false, null))
+        assertTrue(AutomationContract.needsRelativeRead("brightness_adjust", false, 5001))
+        assertTrue(AutomationContract.needsRelativeRead("brightness_adjust", false, -1))
+        assertFalse(AutomationContract.needsRelativeRead("brightness_adjust", false, 0))
+        assertFalse(AutomationContract.needsRelativeRead("brightness_adjust", false, 5000))
+        assertFalse(AutomationContract.needsRelativeRead("brightness_adjust", true, 60000))
+        assertFalse(AutomationContract.needsRelativeRead("brightness_set", false, null))
+    }
 }

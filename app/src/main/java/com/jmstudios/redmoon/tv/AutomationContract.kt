@@ -69,6 +69,8 @@ object AutomationContract {
         "duration" -> now + requireNotNull(request.seconds) * 1000L
         else -> nextBoundary
     }
+    fun needsRelativeRead(command: String, hasDesiredTarget: Boolean, sampleAgeMillis: Long?): Boolean =
+        command == "brightness_adjust" && !hasDesiredTarget && (sampleAgeMillis == null || sampleAgeMillis !in 0..5000)
     /** Latest desired target, rather than stale readback, accumulates held-button presses. */
     fun adjusted(current: Int, delta: Int, band: IntRange) = (current + delta).coerceIn(band)
 }
