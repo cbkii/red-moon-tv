@@ -19,6 +19,10 @@ MODULE = '/data/adb/modules/redmoontv_supervisor'  # Magisk module operations on
 
 
 class Continuity(base.Validator):
+    def archive(self, stamp, label, device, duration, guided, interrupted):
+        return base.collect.Collector.archive(self, stamp, label, device, duration, guided, interrupted,
+                                             read_only=getattr(self, 'read_only', False))
+
     def root(self, words, timeout=25):
         if not self.allow_root:
             raise RuntimeError('This experiment requires explicit --root')
@@ -209,7 +213,8 @@ def main(argv=None):
                           'effects':'ADB experiments; saves/restores configuration, no optical pass inferred'},indent=2)); return 0
     stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     run = Continuity(args.serial, args.output / ('a4-continuity-' + stamp), args.package)
-    run.allow_root = args.root; run.results = []; saved = False; interrupted = False
+    run.allow_root = args.root; run.read_only = args.scenario == "status" and args.supervisor in (None,"status")
+    run.results = []; saved = False; interrupted = False
     if run.checked(['get-state']).strip() != 'device': raise RuntimeError('ADB transport unavailable')
     device = run.checked(['shell','getprop','ro.product.device']).strip()
     if not device.startswith('xiaoyushan'): raise RuntimeError('Selected device is not the established A4')

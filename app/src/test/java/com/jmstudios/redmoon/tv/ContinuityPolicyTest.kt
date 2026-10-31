@@ -29,4 +29,14 @@ class ContinuityPolicyTest {
         assertNull(retry.next(false, false, true)); retry.reset()
         assertEquals(1000L, retry.next(false, false, true))
     }
+    @Test fun ordinaryBrightnessBoundaryStillFadesWhenWarmthIsOff() {
+        assertFalse(startupCatchUp(false, false, true))
+        assertTrue(startupCatchUp(true, false, true))
+        assertTrue(startupCatchUp(false, true, true))
+    }
+    @Test fun warmthOnlyBoundariesDoNotRemainInStartupForever() {
+        assertTrue(startupCatchUp(true, true, false))
+        assertFalse(startupCatchUp(false, true, false))
+    }
+
 }

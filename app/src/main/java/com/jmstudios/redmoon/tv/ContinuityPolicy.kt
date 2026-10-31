@@ -32,3 +32,7 @@ class ReadinessRetry {
 }
 
 class NativeAccessRequired(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
+
+/** Catch-up is a lifecycle event, independent of whether a warmth window exists. */
+fun startupCatchUp(firstOrWake: Boolean, nativeNeedsStart: Boolean, brightnessEnabled: Boolean): Boolean =
+    firstOrWake || (nativeNeedsStart && brightnessEnabled)

@@ -26,6 +26,8 @@ python3 a4-validate.py -s TV_SERIAL --command use_root_read --execute
 python3 a4-validate.py -s TV_SERIAL --command probe --execute
 ```
 
+If an older build left a saved journal, first pause and deliberately Restore (when context still matches) or Keep that session through the existing ADB commands. Do not clear a pending record merely to continue.
+
 Observe actual dimming and restoration. Only after that observation, record it explicitly:
 
 ```sh

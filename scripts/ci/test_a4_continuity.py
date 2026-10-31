@@ -60,3 +60,44 @@ class ContinuityTests(unittest.TestCase):
             (root/'selected-package').write_text('anything; touch BAD\n')
             result=subprocess.run(['sh',str(f)],capture_output=True,text=True,timeout=5)
             self.assertEqual(0,result.returncode,result.stderr);self.assertFalse((root/'BAD').exists())
+
+    def test_real_status_cli_with_fake_adb_stays_read_only_and_hashes_apk(self):
+        import os,zipfile
+        with tempfile.TemporaryDirectory() as d:
+            root=pathlib.Path(d);adb=root/'adb';log=root/'calls.jsonl'
+            adb.write_text('#!'+sys.executable+'\n'+'''
+import sys,json,pathlib,os
+args=sys.argv[3:]
+with open(os.environ['ADB_LOG'],'a') as f:f.write(json.dumps(args)+'\\n')
+if args==['get-state']:print('device')
+elif args==['shell','getprop','ro.product.device']:print('xiaoyushan')
+elif args[:3]==['shell','pm','path']:print('package:/installed/base.apk')
+elif args[0]=='pull':pathlib.Path(args[-1]).write_bytes(b'test installed apk')
+elif args[:3]==['shell','content','query']:print('Row: 0 report='+json.dumps({'schema':5,'package':'com.cbkii.redmoontv.testing','service_running':False,'runtime':{'pending':0},'native_level':66,'sample_current_process':False}))
+else:print('unavailable')
+''');adb.chmod(0o755)
+            env=dict(os.environ,PATH=str(root)+os.pathsep+os.environ['PATH'],ADB_LOG=str(log))
+            r=subprocess.run([sys.executable,str(ROOT/'scripts/a4-continuity.py'),'-s','tv','--scenario','status','--execute','--output',d],env=env,capture_output=True,text=True,timeout=15)
+            self.assertEqual(0,r.returncode,r.stderr)
+            calls=[json.loads(line) for line in log.read_text().splitlines()]
+            self.assertFalse(any(any(word in [part for arg in args for part in __import__('shlex').split(arg)] for word in ('su','install','force-stop','reboot','call','push','setprop')) for args in calls))
+            with zipfile.ZipFile(next(root.glob('*.zip'))) as z:
+                manifest=json.loads(z.read(next(n for n in z.namelist() if n.endswith('/manifest.json'))))
+                self.assertTrue(manifest['read_only'])
+                self.assertTrue(any(n.endswith('/installed.apk') for n in z.namelist()))
+
+    def test_validation_package_has_closed_hashes_and_executable_module_scripts(self):
+        import zipfile,hashlib
+        spec=importlib.util.spec_from_file_location('a4_pack',ROOT/'scripts/a4-package-validation.py')
+        pack=importlib.util.module_from_spec(spec);spec.loader.exec_module(pack)
+        with tempfile.TemporaryDirectory() as d,patch.object(pack.subprocess,'check_output',side_effect=['a'*40,'']):
+            bundle,module=pack.package(ROOT,pathlib.Path(d))
+            with zipfile.ZipFile(module) as z:
+                self.assertEqual({'module.prop','skip_mount','customize.sh','service.sh'},set(z.namelist()))
+                self.assertEqual(0o100755,z.getinfo('service.sh').external_attr>>16)
+            with zipfile.ZipFile(bundle) as z:
+                manifest=json.loads(z.read('manifest.json'))
+                self.assertEqual(set(z.namelist())-{'manifest.json'},set(manifest['sha256']))
+                for name,sha in manifest['sha256'].items():self.assertEqual(sha,hashlib.sha256(z.read(name)).hexdigest())
+        with tempfile.TemporaryDirectory() as d,patch.object(pack.subprocess,'check_output',side_effect=['a'*40,' M source']):
+            with self.assertRaisesRegex(RuntimeError,'Commit all source'):pack.package(ROOT,pathlib.Path(d))

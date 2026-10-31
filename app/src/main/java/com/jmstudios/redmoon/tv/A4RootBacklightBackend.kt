@@ -33,7 +33,8 @@ class A4RootBacklightBackend(context: Context) : BacklightBackend {
         fun quote(value: String) = "'" + value.replace("'", "'\\''") + "'"
         val command = "CLASSPATH=${quote(apk)} exec /system/bin/app_process32 /system/bin " +
             "--nice-name=${quote(app.packageName + ":a4-root")} com.jmstudios.redmoon.tv.A4RootMain ${quote(token)} ${quote(bindings)}"
-        val child = ProcessBuilder("su", "-c", command).start()
+        val child = try { ProcessBuilder("su", "-c", command).start() }
+            catch (error: IOException) { throw IllegalStateException("Root service unavailable before startup", error) }
         process = child
         input = DataInputStream(BufferedInputStream(child.inputStream))
         output = DataOutputStream(BufferedOutputStream(child.outputStream))

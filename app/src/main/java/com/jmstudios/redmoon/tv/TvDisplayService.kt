@@ -30,6 +30,7 @@ class TvDisplayService : Service() {
     private var retryTask: Runnable? = null
     @Volatile private var retryAt = 0L
     @Volatile private var needsNativeStart = true
+    private var catchUp = true
     @Volatile private var brightnessState = DisplayRunState.STARTING
     @Volatile private var warmthState = DisplayRunState.DISABLED
     @Volatile private var startReason = "creating"
@@ -86,7 +87,7 @@ class TvDisplayService : Service() {
         if (awake == screenOn) return
         screenOn = awake
         cancelTransition(); cancelRetry()
-        needsNativeStart = true
+        needsNativeStart = true; catchUp = true
         StartupEvents.record(this, if (awake) "wake" else "standby")
         if (awake) {
             readiness.reset()
@@ -113,7 +114,7 @@ class TvDisplayService : Service() {
     private val health = object : Runnable {
         override fun run() {
             if (destroyed) return
-            if (!prefs.identityReady) prefs.prepareIdentity { if (!destroyed) reconcile(false, true) }
+            if (!prefs.identityReady) prefs.prepareIdentity { if (!destroyed) reconcile(false, startupCatchUp(catchUp, needsNativeStart, prefs.backlightEnabled)) }
             healthAt = SystemClock.elapsedRealtime()
             powerChanged()
             try { if (screenOn) {
@@ -121,7 +122,7 @@ class TvDisplayService : Service() {
                 updateWarmth(prefs.policy(), Instant.now(), overlay == null)
                 val sample = NativeSnapshot.value
                 if (prefs.backlightEnabled && !preview && queue.count == 0 &&
-                    (sample == null || System.currentTimeMillis() - sample.at >= 50000)) {
+                    (sample == null || SystemClock.elapsedRealtime() - sample.elapsed >= 50000)) {
                     if (controller.hasClaim()) submit("monitor") { controller.observe() }
                     else if (retryTask == null) reconcile(false, true)
                 }
@@ -152,7 +153,7 @@ class TvDisplayService : Service() {
         if (prefs.store.getString("native-read-state", "") == "reading")
             prefs.store.edit().remove("native-read-state").apply()
         controller = newController()
-        recoveryRequired = try { RecoveryJournal(this).load()?.let { it.pending != null || it.kind != "schedule" } == true }
+        recoveryRequired = try { RecoveryJournal(this).load()?.let { it.pending != null || it.kind != "schedule" || it.identity.isBlank() } == true }
             catch (_: Exception) { true }
         prefs.store.edit().putBoolean("probe-active", false).apply()
         if (!recoveryRequired && prefs.store.getBoolean("retryable-read", false) && !prefs.store.getBoolean("access-required", false))
@@ -167,7 +168,7 @@ class TvDisplayService : Service() {
         getSystemService(DisplayManager::class.java).registerDisplayListener(displays, main)
         main.postDelayed(health, 60000)
         TvContinuity.arm(this)
-        prefs.prepareIdentity { if (!destroyed) reconcile(false, true) }
+        prefs.prepareIdentity { if (!destroyed) reconcile(false, startupCatchUp(catchUp, needsNativeStart, prefs.backlightEnabled)) }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val reason = intent?.getStringExtra("reason") ?: if (intent == null) "sticky_restart" else "command"
@@ -184,7 +185,7 @@ class TvDisplayService : Service() {
                 if (intent?.getStringExtra("reason") == "health" && prefs.store.getBoolean("retryable-read", false) && !recoveryRequired && !prefs.store.getBoolean("access-required", false) && retryTask == null) {
                     readiness.reset(); prefs.store.edit().putBoolean("native-blocked", false).apply()
                 }
-                if (retryTask == null) reconcile(false, needsNativeStart || overlay == null)
+                if (retryTask == null) reconcile(false, startupCatchUp(catchUp, needsNativeStart, prefs.backlightEnabled))
             }
             "use_root", "use_apk", "use_root_read", "use_apk_read" -> {
                 if (prefs.backlightEnabled || preview || overridePhase != null) status("Pause native scheduling/preview before changing backend")
@@ -391,7 +392,7 @@ class TvDisplayService : Service() {
             event = "Picture/input/HDR context changed; old restoration ownership discarded"
             main.postDelayed({ if (!destroyed && screenOn && prefs.backlightEnabled) reconcile(true, true) }, 1000)
         } else {
-            edit.remove("manual-hold-until"); recoveryRequired = try { controller.pendingRecovery()?.let { it.pending != null || it.kind != "schedule" } == true } catch (_: Exception) { true }
+            edit.remove("manual-hold-until"); recoveryRequired = try { controller.pendingRecovery()?.let { it.pending != null || it.kind != "schedule" || it.identity.isBlank() } == true } catch (_: Exception) { true }
         }
         if (!RecoveryJournal.exists(this)) preview = false
         if (event != null) {
@@ -458,7 +459,8 @@ class TvDisplayService : Service() {
         val state = policy.at(now, ZoneId.systemDefault())
         if (overrideUntil?.let { now >= it } == true) clearOverride()
         scheduleNext(state.next.instant)
-        updateWarmth(policy, now, bootstrap)
+        updateWarmth(policy, now, (bootstrap && catchUp) || overlay == null)
+        catchUp = false
         TvContinuity.arm(this)
         if (!screenOn) { brightnessState = DisplayRunState.STANDBY; return }
         if (preview) return
@@ -534,7 +536,7 @@ class TvDisplayService : Service() {
                 if (warmNext < next) next = warmNext
             }
         } catch (error: IllegalArgumentException) { prefs.warmthStatus = "Invalid warmth window; backlight remains independent" }
-        nextBoundaryAt = next.toEpochMilli()
+        nextBoundaryAt = if (prefs.backlightEnabled || prefs.warmthEnabled || overridePhase != null) next.toEpochMilli() else 0L
         val alarm = getSystemService(AlarmManager::class.java)
         val event = PendingIntent.getBroadcast(this, 71, Intent(this, TvReceiver::class.java).setAction(BOUNDARY), PendingIntent.FLAG_IMMUTABLE)
         alarm.cancel(event)

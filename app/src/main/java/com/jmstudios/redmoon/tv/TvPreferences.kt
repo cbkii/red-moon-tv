@@ -77,7 +77,9 @@ class TvPreferences(private val context: Context) {
         } catch (_: Exception) { "unreadable:${file.name}" }
     }
     fun sessionState(): NativeSessionState = try {
-        nativeSessionState(RecoveryJournal(context).load(), TvDisplayService.liveSession, backlightEnabled,
+        val record = RecoveryJournal(context).load()
+        if (record != null && record.identity.isBlank() && record.session != TvDisplayService.liveSession) NativeSessionState.RECOVERY
+        else nativeSessionState(record, TvDisplayService.liveSession, backlightEnabled,
             store.contains("manual-hold-until"), TvDisplayService.active && store.getBoolean("probe-active", false),
             TvDisplayService.runtime().optString("operation") in listOf("transition", "fade", "probe", "test-fade", "restore"))
     } catch (_: Exception) { NativeSessionState.RECOVERY }
