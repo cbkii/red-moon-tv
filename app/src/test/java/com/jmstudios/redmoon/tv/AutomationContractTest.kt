@@ -108,4 +108,12 @@ class AutomationContractTest {
         assertFalse(AutomationContract.needsRelativeRead("brightness_adjust", true, 60000))
         assertFalse(AutomationContract.needsRelativeRead("brightness_set", false, null))
     }
+    @Test fun stableErrorCodesSeparateNativeOverlayAndPartialOutcomes() {
+        assertNull(AutomationResult.errorCode("applied", "brightness"))
+        assertEquals("NATIVE_FAILED", AutomationResult.errorCode("failed", "brightness"))
+        assertEquals("OVERLAY_FAILED", AutomationResult.errorCode("failed", "warmth"))
+        assertEquals("REQUEST_REJECTED", AutomationResult.errorCode("rejected", "dispatch"))
+        assertEquals("PARTIAL_APPLICATION", AutomationResult.errorCode("partial", "both"))
+        assertEquals("CANCELLED", AutomationResult.errorCode("cancelled", "brightness"))
+    }
 }

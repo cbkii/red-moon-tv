@@ -30,7 +30,7 @@ class TvControlReceiver : BroadcastReceiver() {
                 if (isOrderedBroadcast) { resultCode = -1; resultData = result.toString() }
             } catch (error: Exception) {
                 if (isOrderedBroadcast) { resultCode = 0; resultData = JSONObject().put("state", "rejected")
-                    .put("error", error.message ?: "Invalid request").toString() }
+                    .put("error_code", "CONTRACT_OR_PAIRING_REJECTED").put("error", error.message ?: "Invalid request").toString() }
                 Log.i("RedMoonAutomation", "Request rejected; invalid contract, disabled integration or revoked token")
             }
             return

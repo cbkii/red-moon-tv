@@ -65,13 +65,13 @@ class AutomationState(private val context: Context) {
             val parts = row.getJSONObject("parts")
             if (part == "dispatch") parts.keys().asSequence().toList().forEach { key ->
                 val pending = parts.getJSONObject(key)
-                if (pending.optString("state") in active) pending.put("state", state).put("detail", detail.take(512))
+                if (pending.optString("state") in active) pending.put("state", state).put("error_code", AutomationResult.errorCode(state, key) ?: JSONObject.NULL).put("detail", detail.take(512))
             }
             else if (parts.optJSONObject(part)?.optString("state")?.let { it !in active } == true) return@synchronized
-            parts.put(part, JSONObject().put("state", state).put("detail", detail.take(512)))
+            parts.put(part, JSONObject().put("state", state).put("error_code", AutomationResult.errorCode(state, part) ?: JSONObject.NULL).put("detail", detail.take(512)))
             val states = parts.keys().asSequence().map { parts.getJSONObject(it).getString("state") }.toList()
             val aggregate = AutomationResult.aggregate(states)
-            row.put("state", aggregate).put("updated_at", System.currentTimeMillis())
+            row.put("state", aggregate).put("error_code", AutomationResult.errorCode(aggregate, part) ?: JSONObject.NULL).put("updated_at", System.currentTimeMillis())
             save(all)
             if (aggregate !in active) {
                 android.util.Log.i("RedMoonAutomation", "request=$id state=$aggregate")
@@ -95,11 +95,11 @@ class AutomationState(private val context: Context) {
         for (i in 0 until all.length()) {
             val row = all.getJSONObject(i)
             if (row.optString("state") in active && row.optString("process") != process) {
-                row.put("state", "failed").put("error", "process_restarted_outcome_unknown").put("updated_at", System.currentTimeMillis())
+                row.put("state", "failed").put("error", "process_restarted_outcome_unknown").put("error_code", "PROCESS_RESTARTED_OUTCOME_UNKNOWN").put("updated_at", System.currentTimeMillis())
                 val parts = row.optJSONObject("parts")
                 parts?.keys()?.asSequence()?.toList()?.forEach { key ->
                     val part = parts.getJSONObject(key)
-                    if (part.optString("state") in active) part.put("state", "failed").put("detail", "process_restarted_outcome_unknown")
+                    if (part.optString("state") in active) part.put("state", "failed").put("error_code", "PROCESS_RESTARTED_OUTCOME_UNKNOWN").put("detail", "process_restarted_outcome_unknown")
                 }
             }
         }; save(all)

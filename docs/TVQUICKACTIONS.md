@@ -71,7 +71,7 @@ The first relative brightness press refreshes a missing/stale native sample (old
 
 ## Results and conditional macros
 
-Ordered broadcasts can return an admission/result record. Normal broadcasts and shortcuts use the same persistent ledger. States are `accepted → running → applied / cancelled / rejected / failed / partial`. Combined requests contain independent `parts.brightness` and `parts.warmth` results; one successful scope cannot hide another's failure. A crash marks unfinished results failed with `process_restarted_outcome_unknown`; it does not replay the request. A rejected unauthenticated/malformed request is returned to an ordered sender, without filling trusted history.
+Ordered broadcasts can return an admission/result record. Normal broadcasts and shortcuts use the same persistent ledger. States are `accepted → running → applied / cancelled / rejected / failed / partial`. Stable `error_code` fields distinguish `NATIVE_FAILED`, `OVERLAY_FAILED`, scoped rejection, `CANCELLED`, `PARTIAL_APPLICATION` and `PROCESS_RESTARTED_OUTCOME_UNKNOWN`; successful records use null. Unauthenticated/malformed ordered sends return `CONTRACT_OR_PAIRING_REJECTED`. Human-readable `detail` explains the current cause. Combined requests contain independent `parts.brightness` and `parts.warmth` results; one successful scope cannot hide another's failure. A crash marks unfinished results failed with `process_restarted_outcome_unknown`; it does not replay the request. A rejected unauthenticated/malformed request is returned to an ordered sender, without filling trusted history.
 
 In tvQuickActions' ADB command action, query cached state:
 
