@@ -19,4 +19,10 @@ object AutomationResult {
         states.any { it == "rejected" } -> "rejected"
         else -> "cancelled"
     }
+    fun aggregateError(parts: Map<String, String>): String? {
+        val state = aggregate(parts.values.toList())
+        if (state == "partial") return "PARTIAL_APPLICATION"
+        val cause = parts.entries.firstOrNull { it.value == state }?.key ?: "dispatch"
+        return errorCode(state, cause)
+    }
 }

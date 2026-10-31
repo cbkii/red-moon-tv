@@ -138,7 +138,8 @@ class TvAutomationActivity : Activity() {
         else parameters()
     }
     private fun finishAction(data: Bundle, title: String) {
-        data.putString("token", state.token())
+        data.putString("token", if (creating) state.shortcutToken(AutomationContract.parse(
+            AutomationState.data(data), UUID.randomUUID().toString())) else state.token())
         // Deliberately no request_id: each invocation is a new button press.
         AutomationContract.parse(AutomationState.data(data), UUID.randomUUID().toString())
         if (!creating) {

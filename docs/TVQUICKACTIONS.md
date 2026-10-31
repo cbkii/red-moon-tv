@@ -1,6 +1,6 @@
 # tvQuickActions integration (automation API 1)
 
-This PR is stacked on the A4 application PR, sharing its native controller, device-protected settings, single-writer lease, recovery journal, context checks and qualification gates. It adds no network server, root-command bridge, foreground-app poller or second native worker. Physical A4/tvQuickActions acceptance remains separate from CI.
+Automation shares the A4 native controller, device-protected settings, single-writer lease, recovery journal, context checks and qualification gates. It adds no network server, root-command bridge, foreground-app poller or second native worker. Physical A4/tvQuickActions acceptance remains separate from CI.
 
 ## Quick setup without ADB
 
@@ -17,6 +17,14 @@ The finishing dispatch activity may briefly affect focus. Validate it during rea
 Disable automation to revoke the token and generated shortcuts. Token rotation also invalidates existing shortcuts; recreate them. Revocation cancels temporary actions, retains the current native value, pauses brightness scheduling and lets saved warmth settings reconcile. Ordinary legacy `CONTROL` commands require the separate **Legacy tokenless controls** switch as well as automation being enabled. That switch permits any installed app to send those legacy commands; it is off by default after upgrade.
 
 ## Broadcast fields for TESTING, stable and debug
+
+Generated shortcuts contain a capability restricted to the selected command and arguments, not the shared broadcast token. Changing phase/scope/value/fade/expiry invalidates that capability. Recreate shortcuts to change their action. Copying the shared broadcast token remains a separate explicit action for trusted macro apps.
+
+Explicit caller request IDs remain replay-protected after their detailed result leaves the bounded history: retired IDs are rejected, never executed again. A fixed 32-KiB tombstone filter bounds memory; a rare filter collision can also reject a new ID safely. Use a fresh ID for a new press. Token rotation resets this credential/replay epoch and invalidates old credentials. Generated shortcut presses omit IDs and are always new actions.
+
+The receiver limits work to 32 requests/second and rejection logging to one entry per ten seconds. Failed/cancelled requests cannot leave a pending temporary target that silently applies later. Successful desired output may persist; running output suspends across standby. A newer action or manual pause cancels an older deferred identity/read callback for that scope. Native failure from an earlier operation may reject a queued newer target for safety, explicitly reporting that the newer setter was never attempted.
+
+`open_controls` reports applied only when the controls activity resumes, with a five-second failure timeout. A4 Android 9/API28 is the qualification target. Android 10+ background activity restrictions and Android 12+ background foreground-service restrictions may require a visible shortcut/controls flow or a platform-permitted overlay exemption. Unsupported background launches return failure; this API does not bypass OS policy. See [Android background activity policy](https://developer.android.com/guide/components/activities/background-starts) and [foreground service policy](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start).
 
 Create tvQuickActions → Custom actions → Intent. Use these exact fields:
 

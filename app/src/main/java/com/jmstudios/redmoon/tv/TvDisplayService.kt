@@ -47,6 +47,7 @@ class TvDisplayService : Service() {
     private lateinit var prefs: TvPreferences
     private lateinit var controller: BacklightController
     private lateinit var automation: AutomationState
+    private val automationOrder = AutomationOrder()
     private val automationLock = Any()
     @Volatile private var brightnessRequest: Pair<Int, String>? = null
     private var warmthRequest: String? = null
@@ -62,8 +63,8 @@ class TvDisplayService : Service() {
     private var overridePhase: Phase? = null
     private var overrideUntil: Instant? = null
     @Volatile private var screenOn = true
-    private fun cancelTransition(): Int {
-        finishBrightness("cancelled", "Transition superseded or lifecycle changed")
+    private fun cancelTransition(preserveRequest: String? = null): Int {
+        if (brightnessRequest?.second != preserveRequest) finishBrightness("cancelled", "Transition superseded or lifecycle changed")
         val token = generation.incrementAndGet()
         synchronized(timerLock) {
             fadeTask?.cancel(false); fadeTask = null
@@ -94,7 +95,7 @@ class TvDisplayService : Service() {
         val awake = displayAwake()
         if (awake == screenOn) return
         screenOn = awake
-        cancelTransition(); cancelRetry()
+        cancelTransition(automation.temporary("brightness")?.optString("request_id")); cancelRetry()
         needsNativeStart = true; catchUp = true
         StartupEvents.record(this, if (awake) "wake" else "standby")
         if (awake) {
@@ -102,7 +103,7 @@ class TvDisplayService : Service() {
             if (preview) revertPreview.run() else reconcile(true, true)
         } else {
             brightnessState = DisplayRunState.STANDBY; warmthState = DisplayRunState.STANDBY
-            clearWarmth(); status("Standby: native writes suspended")
+            clearWarmth(true); status("Standby: native writes suspended")
             submit("standby-close", true) { controller.close() }
         }
     }
@@ -193,6 +194,11 @@ class TvDisplayService : Service() {
     }
     private fun executeCommand(command: String, intent: Intent?) {
         when (command) {
+            "pause", "resume", "phase", "probe", "restore", "revert", "keep", "use_root", "use_apk", "use_root_read", "use_apk_read" -> automationOrder.invalidate("brightness")
+            "warmth", "warmth_off" -> automationOrder.invalidate("warmth")
+            "reconcile", "automation-revoke" -> automationOrder.invalidate("both")
+        }
+        when (command) {
             "automation" -> handleAutomation(requireNotNull(intent))
             "automation-revoke" -> {
                 finishBrightness("cancelled", "Integration revoked")
@@ -278,13 +284,19 @@ class TvDisplayService : Service() {
         warmthRequest = null; warmthFadeOverride = null
         automation.result(id, "warmth", state, detail)
     }
-    private fun handleAutomation(intent: Intent, refreshed: Boolean = false) {
+    private fun handleAutomation(intent: Intent, refreshed: Boolean = false, admission: AutomationOrder.Ticket? = null) {
         val id = intent.getStringExtra("automation-id") ?: return
         try {
             val extras = intent.getBundleExtra("automation-extras") ?: error("Missing request")
             val r = AutomationContract.parse(AutomationState.data(extras), id)
             if (automation.find(id)?.optString("state") !in AutomationResult.active) return
-            check(automation.authorised(extras.getString("token"))) { "Integration disabled or token revoked" }
+            check(automation.authorised(extras.getString("token"), r)) { "Integration disabled or token revoked" }
+            val ticket = admission ?: if (r.command in setOf("show_status", "open_controls", "reconcile"))
+                automationOrder.snapshot(r.scope) else automationOrder.admit(r.scope)
+            if (!automationOrder.current(ticket)) {
+                automation.result(id, "dispatch", "cancelled", "A newer control superseded deferred work"); return
+            }
+            if (automation.nextExpiry()?.let { it <= System.currentTimeMillis() } == true) reconcile(false)
             if (r.affects("brightness") && r.command !in setOf("brightness_pause", "snooze", "cancel_transition", "show_status", "open_controls", "reconcile") && !prefs.identityReady) {
                 if (!identityWaits.add(id)) return
                 val timeout = Runnable {
@@ -296,7 +308,7 @@ class TvDisplayService : Service() {
                 main.postDelayed(timeout, 10000)
                 prefs.prepareIdentity {
                     if (!destroyed && prefs.identityReady && identityWaits.remove(id)) {
-                        main.removeCallbacks(timeout); handleAutomation(intent)
+                        main.removeCallbacks(timeout); handleAutomation(intent, admission = ticket)
                     }
                 }
                 return
@@ -309,7 +321,7 @@ class TvDisplayService : Service() {
                     try {
                         controller.read(); prefs.readFinished()
                         main.post {
-                            if (!destroyed) handleAutomation(intent, true)
+                            if (!destroyed) handleAutomation(intent, true, ticket)
                             else automation.result(id, "brightness", "cancelled", "Service stopped")
                         }
                     } catch (error: Exception) {
@@ -327,8 +339,13 @@ class TvDisplayService : Service() {
                 }
                 "open_controls" -> {
                     automation.start(r, listOf("control"))
-                    startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    automation.result(id, "control", "applied", "Controls opened")
+                    startActivity(Intent(this, TvActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        .putExtra("automation-open-id", id))
+                    main.postDelayed({
+                        if (automation.find(id)?.optString("state") in AutomationResult.active)
+                            automation.result(id, "control", "failed", "Controls did not become visible; open them with the remote/shortcut")
+                        stopIfIdle()
+                    }, 5000)
                 }
                 "reconcile" -> {
                     automation.start(r, listOf("control"))
@@ -448,7 +465,7 @@ class TvDisplayService : Service() {
         val policy = prefs.policy(); val now = Instant.now()
         val scheduled = if (!prefs.warmthEnabled) 0 else if (prefs.linked) prefs.warmth(policy.at(now, ZoneId.systemDefault()).current.phase)
             else if (DailyWindow(prefs.warmthStart, prefs.warmthEnd).at(now, ZoneId.systemDefault()).first) prefs.store.getInt("custom-strength", 40) else 0
-        val current = prior?.optInt("value") ?: overlay?.profile?.intensity ?: scheduled
+        val current = prior?.optInt("value") ?: scheduled
         when (r.command) {
             "warmth_enable" -> { prefs.warmthEnabled = r.enabled!!; automation.temporary("warmth", null) }
             "resume_auto" -> automation.temporary("warmth", null)
@@ -596,8 +613,11 @@ class TvDisplayService : Service() {
         prefs.store.edit().remove("current-native-error").apply()
         status("Native backlight $level / 100. ${if (prefs.writeContextReady) "Ready for a visible test." else "Read only: range or picture/boot context is unavailable."}")
     }
-    private fun fail(error: Exception) {
-        finishBrightness("failed", error.javaClass.simpleName + ": " + (error.message ?: "Native failure"))
+    private fun fail(error: Exception, failedGeneration: Int? = null) {
+        val failureState = automationFailureState(failedGeneration, brightnessRequest?.first)
+        finishBrightness(failureState, if (failureState == "rejected")
+            "A prior native operation failed; the newer target was not attempted. Explicit recovery/resume required."
+            else error.javaClass.simpleName + ": " + (error.message ?: "Native failure"))
         prefs.store.edit().putString("native-read-state", "failed").putBoolean("probe-active", false).apply()
         cancelTransition(); needsNativeStart = true
         val message = error.message ?: error.javaClass.simpleName
@@ -673,7 +693,9 @@ class TvDisplayService : Service() {
         val admitted = queue.submit(key, critical) {
             if (!critical && token != generation.get()) return@submit
             operation = key
-            try { work() } finally { operation = "idle" }
+            try { work() }
+            catch (error: Exception) { if (error !is java.util.concurrent.CancellationException) fail(error, token) }
+            finally { operation = "idle" }
         }
         if (!admitted && key !in listOf("monitor", "fade")) status("Native request coalesced or busy: $key")
         return admitted
@@ -684,7 +706,7 @@ class TvDisplayService : Service() {
     }
     private fun stopIfIdle() {
         if (::prefs.isInitialized) TvContinuity.arm(this)
-        if (!destroyed && identityWaits.isEmpty() && warmthRequest == null && !automation.pending() && queue.count == 0 && !prefs.backlightEnabled && !prefs.warmthEnabled && overridePhase == null && !preview && (overlay == null || overlay!!.profile.isOff)) stopSelf()
+        if (!destroyed && identityWaits.isEmpty() && warmthRequest == null && !automation.runningIn(session) && !automation.pending() && queue.count == 0 && !prefs.backlightEnabled && !prefs.warmthEnabled && overridePhase == null && !preview && (overlay == null || overlay!!.profile.isOff)) stopSelf()
     }
     private fun reconcile(force: Boolean, bootstrap: Boolean = false) {
         val policy = try { prefs.policy() } catch (e: IllegalArgumentException) { status("Invalid schedule: ${e.message}"); return }
@@ -741,7 +763,7 @@ class TvDisplayService : Service() {
         if (!force && queue.count > 0 && !expiredTemporary) return
         val automationId = temporary?.optString("request_id")?.takeIf { it.isNotEmpty() } ?: resumeRequest
         resumeRequest = null
-        val token = cancelTransition()
+        val token = cancelTransition(automationId)
         synchronized(automationLock) {
             brightnessRequest = automationId?.takeIf { automation.find(it)?.optString("state") in setOf("accepted", "running") }?.let { token to it }
         }
@@ -815,8 +837,8 @@ class TvDisplayService : Service() {
         updateWarmth(policy, now, immediate)
         sendBroadcast(Intent(STATUS).setPackage(packageName))
     }
-    private fun clearWarmth() {
-        finishWarmth("cancelled", "Overlay suspended")
+    private fun clearWarmth(suspend: Boolean = false) {
+        if (!suspend) finishWarmth("cancelled", "Overlay suspended")
         warmthTask?.let { main.removeCallbacks(it) }; warmthTask = null; warmthTarget = null
         try { overlay?.close() } catch (error: RuntimeException) { prefs.warmthStatus = "Warmth teardown failed: ${error.message}" }
         overlay = null
@@ -925,6 +947,7 @@ class TvDisplayService : Service() {
     override fun onDestroy() {
         identityWaits.forEach { automation.result(it, "dispatch", "cancelled", "Service stopped while checking vendor identity") }; identityWaits.clear()
         finishWarmth("cancelled", "Service stopped")
+        automation.stopSession(session)
         active = false; liveSession = null; instance = null
         destroyed = true; cancelTransition(); cancelRetry()
         idleTask?.cancel(false)

@@ -42,7 +42,7 @@ def nativeDigest = java.security.MessageDigest.getInstance('SHA-256')
  'BrightnessPolicy.kt', 'TransitionSession.kt', 'TvDisplayService.kt', 'TvStorage.kt',
  'TvPreferences.kt', 'ControllerQueue.kt', 'NativeSessionState.kt', 'QuantisedFade.kt',
  'TvContinuity.kt', 'TvReceiver.kt', 'ValidationBackend.kt',
- 'AutomationContract.kt', 'AutomationState.kt', 'AutomationResult.kt'].sort().each { name ->
+ 'AutomationContract.kt', 'AutomationState.kt', 'AutomationResult.kt', 'AutomationGuards.kt'].sort().each { name ->
     nativeDigest.update(name.getBytes('UTF-8'))
     nativeDigest.update(file('src/main/java/com/jmstudios/redmoon/tv/' + name).bytes)
 }

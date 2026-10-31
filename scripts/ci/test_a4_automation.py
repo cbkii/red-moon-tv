@@ -22,6 +22,7 @@ class AutomationTests(unittest.TestCase):
         command = shlex.split(args[1])
         self.assertEqual(['--ei', 'value', '5', '--ez', 'feedback', 'true', '--es', 'token', value], command[-9:])
         self.assertIn('com.cbkii.redmoontv.testing/com.jmstudios.redmoon.tv.TvControlReceiver', command)
+        self.assertEqual('com.cbkii.redmoontv.AUTOMATION', command[command.index('-a') + 1])
 
     def test_broadcast_rejects_untyped_unbounded_and_unknown_key_shapes(self):
         for value in ({'value': []}, {'value': 2.5}, {'token': 'x' * 257}, {'a;id': 'x'}):
@@ -50,9 +51,11 @@ class AutomationTests(unittest.TestCase):
     def test_protected_pairing_bypasses_recording_and_never_enables_consent(self):
         with tempfile.TemporaryDirectory() as d:
             run = automation.AutomationRunner('tv', pathlib.Path(d), 'pkg')
-            with patch.object(run, 'run', return_value=(0, 'Bundle[{result={"enabled":true,"token":"private"}}]', '')), \
+            with patch.object(run, 'run', return_value=(0, 'Bundle[{result={"enabled":true,"token":"private"}}]', '')) as query, \
                  patch.object(run, 'checked') as log:
                 run.pairing(); log.assert_not_called(); self.assertEqual('private', run.token)
+                query.assert_called_once_with(automation.base.shell_args(['content', 'call', '--uri',
+                    'content://pkg.diagnostics', '--method', 'automation_pairing']), 12)
             self.assertEqual([], list(pathlib.Path(d).iterdir()))
             with patch.object(run, 'run', return_value=(0, 'Bundle[{result={"enabled":false,"token":"private"}}]', '')):
                 with self.assertRaisesRegex(RuntimeError, 'Enable paired'): run.pairing()
@@ -73,16 +76,19 @@ class AutomationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             run = automation.AutomationRunner('tv', pathlib.Path(d), 'pkg'); run.results = []
             expected = {'request_id': 'id', 'state': 'partial', 'parts': {'warmth': {'state': 'applied'}, 'brightness': {'state': 'failed'}}}
-            with patch.object(run, 'state', return_value={'results': [expected]}):
+            with patch.object(run, 'state', return_value={'results': [{'request_id': 'unrelated', 'state': 'applied'}, expected]}):
                 self.assertEqual(expected, run.wait_request('id'))
             with self.assertRaises(RuntimeError): run.expect(expected, 'applied')
 
     def test_checked_never_persists_the_pairing_token(self):
         with tempfile.TemporaryDirectory() as d:
             run = automation.AutomationRunner('tv', pathlib.Path(d), 'pkg'); run.token = 'private'
+            run.destination.mkdir(parents=True, exist_ok=True)
             with patch.object(run, 'run', return_value=(0, 'result=private', '')):
                 self.assertEqual('result=private', run.checked(['shell', '--es', 'token', 'private']))
             combined = ''.join(p.read_text() for p in pathlib.Path(d).iterdir())
+            self.assertTrue(list(pathlib.Path(d).glob('automation-action-*.json')))
+            self.assertIn('[REDACTED]', combined)
             self.assertNotIn('private', combined)
 
     def test_real_cli_contract_suite_uses_exact_broadcasts_and_redacts_archive(self):
@@ -106,6 +112,9 @@ if w[:2]==['content','query']:
 if w[:2]==['content','call'] and w[w.index('--method')+1]=='automation_pairing':
  print('Bundle[{result='+json.dumps({'enabled':True,'token':'private-token'})+'}]');sys.exit()
 if w[:2]==['am','broadcast'] or (w[:2]==['content','call'] and 'automation' in w):
+ if w[:2]==['am','broadcast']:
+  assert w[w.index('-a')+1]=='com.cbkii.redmoontv.AUTOMATION'
+  assert w[w.index('-n')+1]=='com.cbkii.redmoontv.testing/com.jmstudios.redmoon.tv.TvControlReceiver'
  data={}
  if w[0]=='am':
   for i,v in enumerate(w[:-2]):

@@ -19,9 +19,13 @@ class AutomationState(private val context: Context) {
             check(prefs.edit().putString("automation-token", it).commit())
         }
     }
-    fun rotate() { synchronized(lock) { check(prefs.edit().remove("automation-token").commit()); token() } }
-    fun authorised(candidate: String?) = enabled && candidate != null && MessageDigest.isEqual(
-        token().toByteArray(Charsets.UTF_8), candidate.toByteArray(Charsets.UTF_8))
+    fun rotate() { synchronized(lock) { check(prefs.edit().remove("automation-token").remove("automation-seen").commit()); token() } }
+    fun shortcutToken(request: AutomationRequest) = ShortcutCapability.sign(token(), request)
+    fun authorised(candidate: String?, request: AutomationRequest? = null): Boolean {
+        if (!enabled || candidate == null || candidate.length !in 1..128) return false
+        val expected = if (candidate.startsWith("shortcut:")) request?.let { shortcutToken(it) } ?: return false else token()
+        return MessageDigest.isEqual(expected.toByteArray(Charsets.UTF_8), candidate.toByteArray(Charsets.UTF_8))
+    }
     fun temporary(part: String): JSONObject? = synchronized(lock) {
         prefs.getString("automation-$part", null)?.let { JSONObject(it) }
     }
@@ -33,7 +37,7 @@ class AutomationState(private val context: Context) {
     fun expire(now: Long): Set<String> {
         val expired = mutableSetOf<String>()
         listOf("brightness", "warmth").forEach { part -> temporary(part)?.let {
-            val at = it.optLong("expires"); if (at > 0 && at <= now) { temporary(part, null); expired.add(part) }
+            if (!temporaryActive(it.optLong("expires"), now)) { temporary(part, null); expired.add(part) }
         } }
         return expired
     }
@@ -44,9 +48,11 @@ class AutomationState(private val context: Context) {
         val all = history(); (0 until all.length()).map { all.getJSONObject(it) }.firstOrNull { it.optString("request_id") == id }
     }
     /** Returns false for a retry; the original result remains authoritative across process recreation. */
-    fun accept(r: AutomationRequest): Boolean = synchronized(lock) {
+    fun accept(r: AutomationRequest, protectReplay: Boolean): Boolean = synchronized(lock) {
         if (find(r.id) != null) return false
         val all = history()
+        val seen = AutomationReplayGuard(prefs.getString("automation-seen", null))
+        check(!protectReplay || !seen.contains(r.id)) { "Request ID already retired; no replay performed" }
         // Never evict running requests to admit more work.
         if ((0 until all.length()).count { all.getJSONObject(it).optString("state") in active } >= 16) return false
         val next = JSONArray()
@@ -55,7 +61,9 @@ class AutomationState(private val context: Context) {
         (keep.filter { it.optString("state") in active } + terminal).forEach { next.put(it) }
         next.put(JSONObject().put("request_id", r.id).put("command", r.command).put("state", "accepted")
             .put("at", System.currentTimeMillis()).put("process", process).put("fingerprint", r.toString()).put("feedback", r.feedback).put("parts", JSONObject()))
-        save(next); true
+        if (protectReplay) seen.add(r.id)
+        check(prefs.edit().putString("automation-results", next.toString())
+            .putString("automation-seen", seen.encode()).commit()); true
     }
     fun result(id: String, part: String, state: String, detail: String = "") = synchronized(lock) {
         val all = history()
@@ -71,7 +79,12 @@ class AutomationState(private val context: Context) {
             parts.put(part, JSONObject().put("state", state).put("error_code", AutomationResult.errorCode(state, part) ?: JSONObject.NULL).put("detail", detail.take(512)))
             val states = parts.keys().asSequence().map { parts.getJSONObject(it).getString("state") }.toList()
             val aggregate = AutomationResult.aggregate(states)
-            row.put("state", aggregate).put("error_code", AutomationResult.errorCode(aggregate, part) ?: JSONObject.NULL).put("updated_at", System.currentTimeMillis())
+            row.put("state", aggregate).put("error_code", AutomationResult.aggregateError(
+                parts.keys().asSequence().associateWith { parts.getJSONObject(it).getString("state") }) ?: JSONObject.NULL).put("updated_at", System.currentTimeMillis())
+            if (retireTemporary(state)) {
+                val affected = if (part == "dispatch") listOf("brightness", "warmth") else listOf(part)
+                affected.forEach { key -> if (temporary(key)?.optString("request_id") == id) temporary(key, null) }
+            }
             save(all)
             if (aggregate !in active) {
                 android.util.Log.i("RedMoonAutomation", "request=$id state=$aggregate")
@@ -87,22 +100,40 @@ class AutomationState(private val context: Context) {
         for (i in 0 until all.length()) if (all.getJSONObject(i).optString("request_id") == r.id) {
             val row = all.getJSONObject(i); if (row.optString("state") !in active) return@synchronized
             val p = row.getJSONObject("parts")
-            parts.forEach { p.put(it, JSONObject().put("state", "running")) }; row.put("state", "running"); save(all)
+            parts.forEach { p.put(it, JSONObject().put("state", "running")) }; row.put("state", "running")
+                .put("execution_session", TvDisplayService.liveSession); save(all)
         }
     }
     fun interrupted() = synchronized(lock) {
         val all = history()
         for (i in 0 until all.length()) {
             val row = all.getJSONObject(i)
-            if (row.optString("state") in active && row.optString("process") != process) {
+            if (row.optString("state") in active && executionInterrupted(row.optString("process"), process,
+                row.optString("execution_session"), TvDisplayService.liveSession)) {
                 row.put("state", "failed").put("error", "process_restarted_outcome_unknown").put("error_code", "PROCESS_RESTARTED_OUTCOME_UNKNOWN").put("updated_at", System.currentTimeMillis())
                 val parts = row.optJSONObject("parts")
                 parts?.keys()?.asSequence()?.toList()?.forEach { key ->
                     val part = parts.getJSONObject(key)
                     if (part.optString("state") in active) part.put("state", "failed").put("error_code", "PROCESS_RESTARTED_OUTCOME_UNKNOWN").put("detail", "process_restarted_outcome_unknown")
                 }
+                listOf("brightness", "warmth").forEach { key ->
+                    if (temporary(key)?.optString("request_id") == row.optString("request_id")) temporary(key, null)
+                }
             }
         }; save(all)
+    }
+    fun stopSession(session: String) = synchronized(lock) {
+        val all = history()
+        (0 until all.length()).map { all.getJSONObject(it) }.filter {
+            it.optString("state") in active && (it.optString("execution_session") == session ||
+                (it.optString("execution_session").isEmpty() && it.optString("process") == process))
+        }.forEach { result(it.getString("request_id"), "dispatch", "cancelled", "Service execution ended") }
+    }
+    fun runningIn(session: String): Boolean = synchronized(lock) {
+        val all = history()
+        (0 until all.length()).any { all.getJSONObject(it).let { row ->
+            row.optString("state") in active && row.optString("execution_session") == session
+        } }
     }
     fun report(): JSONObject = synchronized(lock) {
         val prefs = TvPreferences(context)
@@ -129,14 +160,18 @@ class AutomationState(private val context: Context) {
         fun data(extras: Bundle?): Map<String, Any?> = extras?.keySet()?.associateWith { extras.get(it) } ?: emptyMap()
         fun submit(context: Context, extras: Bundle?): JSONObject {
             val state = AutomationState(context)
+            require(state.enabled && extras != null && extras.size() <= 12) { "Integration disabled or request too large" }
+            val candidate = extras.getString("token")
+            require(candidate != null && candidate.length in 1..128 &&
+                (candidate.startsWith("shortcut:") || state.authorised(candidate))) { "Integration disabled or token revoked" }
             val request = AutomationContract.parse(data(extras), UUID.randomUUID().toString())
-            require(state.authorised(extras?.getString("token"))) { "Integration disabled or token revoked" }
+            require(state.authorised(candidate, request)) { "Integration disabled or token revoked" }
             synchronized(lock) {
                 state.find(request.id)?.let {
                     require(it.optString("fingerprint") == request.toString()) { "request_id already used for different arguments" }
                     return it
                 }
-                check(state.accept(request)) { "Automation queue busy" }
+                check(state.accept(request, extras.containsKey("request_id"))) { "Automation queue busy" }
             }
             try {
                 context.startForegroundService(Intent(context, TvDisplayService::class.java).putExtra("command", "automation")

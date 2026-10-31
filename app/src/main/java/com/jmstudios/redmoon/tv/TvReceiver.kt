@@ -25,13 +25,21 @@ class TvReceiver : BroadcastReceiver() {
 class TvControlReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == AutomationContract.ACTION) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (!admit(now)) {
+                if (isOrderedBroadcast) { resultCode = 0; resultData = "{\"state\":\"rejected\",\"error_code\":\"RATE_LIMITED\"}" }
+                return
+            }
             try {
                 val result = AutomationState.submit(context, intent.extras)
                 if (isOrderedBroadcast) { resultCode = -1; resultData = result.toString() }
             } catch (error: Exception) {
                 if (isOrderedBroadcast) { resultCode = 0; resultData = JSONObject().put("state", "rejected")
                     .put("error_code", "CONTRACT_OR_PAIRING_REJECTED").put("error", error.message ?: "Invalid request").toString() }
-                Log.i("RedMoonAutomation", "Request rejected; invalid contract, disabled integration or revoked token")
+                if (now - lastRejected >= 10000) {
+                    lastRejected = now
+                    Log.i("RedMoonAutomation", "Request rejected; invalid contract, disabled integration or revoked token")
+                }
             }
             return
         }
@@ -44,5 +52,14 @@ class TvControlReceiver : BroadcastReceiver() {
         if (command == "phase" && phase == null) return
         if (command == "ensure_running") TvContinuity.ensureRunning(context, "external_wake")
         else TvDisplayService.command(context, command, phase)
+    }
+    companion object {
+        private var window = 0L
+        private var count = 0
+        private var lastRejected = -10000L
+        private fun admit(now: Long): Boolean {
+            if (now - window >= 1000) { window = now; count = 0 }
+            return ++count <= 32
+        }
     }
 }

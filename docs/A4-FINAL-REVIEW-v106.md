@@ -11,7 +11,7 @@ Repository: `cbkii/red-moon-tv`. Mode: complete open-PR and prerelease review. P
 
 The final integration incorporates #1's later `300fda3` runner changes into #6 before release. Final source/build provenance is the immutable SHA embedded in each APK and its published BUILD_INFO. CI must pass on the final PR head and merged default branch; historical green runs do not qualify a different tree.
 
-No submitted reviews, requested changes or inline review threads were returned for either input. Bot subscription/size/base-branch skips are unavailable review evidence, not approvals. GitHub rulesets returned an empty list; the integration cannot read the administration-only classic branch-protection endpoint. Normal SHA-guarded merges must respect GitHub's actual server-side merge checks; no bypass is requested.
+Initial preflight returned no submitted reviews or inline threads; a later Sourcery review supplied 15 findings on #6. Their disposition is recorded below. Bot subscription/size/base-branch skips are unavailable review evidence, not approvals. GitHub rulesets returned an empty list; the integration cannot read the administration-only classic branch-protection endpoint. Normal SHA-guarded merges must respect GitHub's actual server-side merge checks; no bypass is requested.
 
 ## Target context
 
@@ -32,6 +32,26 @@ No submitted reviews, requested changes or inline review threads were returned f
 3. **[P2][high][release][confirmed] No public prerelease operation existed.** The existing publisher accepted drafts only, with full physical acceptance required for stable promotion. Added a distinct public prerelease operation using current default source, isolated signing and remote digest checks; preserved stable acceptance. Tests reject untrusted requests, wrong/moved source, argument injection, TESTING publication and stable bypass. v106 metadata and Gradle/workflow defaults agree on name/code 106.
 
 All confirmed findings above are addressed in the final integration. They do not establish physical A4 compatibility.
+
+### Late review disposition (PR #6)
+
+| Finding | Classification and resolution |
+|---|---|
+| 1, shared shortcut credential | Valid P2 security boundary. Generated shortcuts now carry an HMAC capability tied to the selected parsed command/arguments, excluding only per-invocation ID. The shared broadcast credential is not returned by the picker. Rotation revokes both. Pure cryptographic tests reject argument/scope/key changes. |
+| 2, failed/cancelled temporary target reapplies | Valid P2 lifecycle/result inconsistency. Terminal failed/rejected/cancelled scopes retire only their own matching persisted target. Successful desired output can survive restart; standby suspends running requests without falsely terminalising them. Interrupted unknown operations retire their target, preserving native recovery. |
+| 3, controls marked applied before visible | Valid bounded reporting issue, especially on newer Android. `open_controls` completes only when TvActivity resumes; a five-second timeout reports failure if OS policy blocks visibility. A live control request prevents idle service teardown before acknowledgement. |
+| 4, expired target reused | Valid P2 correctness. Admission reconciles expiry before relative-read/target selection. Warmth without an active temporary target uses the saved scheduled target, not an expired overlay transition. Exact expiry edges are regression-tested. |
+| 5, Android 12+ background FGS restrictions | Outside qualified A4 API28 context. Android 12 restrictions and Android 10 activity restrictions are documented platform boundaries; unsupported launches return failure, never fabricated application. Use the visible shortcut/controls route and granted overlay exemption where the newer platform permits it. No background-policy bypass is introduced. |
+| 6, evicted IDs replay | Valid P2 idempotence. Explicit caller IDs have a fixed 32-KiB persisted tombstone filter separate from short result history. An evicted ID is rejected instead of executed. Rare filter collisions also reject safely. Rotation starts a new credential/replay epoch. Shortcuts without caller IDs represent fresh button presses. |
+| 7, misleading aggregate error scope | Valid P2 reporting. Aggregate error follows the part with the aggregate terminal state, independent of completion order. Per-part results remain authoritative. |
+| 8, older native failure attributed to newer request | Valid P2 attribution/safety issue. Worker exceptions retain their captured transition generation. A newer target is explicitly rejected as unattempted due to the earlier failure; it is not reported as executing/failing. The global native safety stop still invalidates queued writes because an unknown previous setter must never be ignored. |
+| 9, deferred older read undoes newer controls | Valid P2 ordering. Per-scope admission tickets survive deferred identity/read callbacks. New controls invalidate older tickets; read-only status does not. Tests cover pause/new target, independent warmth and combined scopes. |
+| 10, control result survives service teardown | Valid P2 lifecycle. Persisted execution session supplements process identity. Teardown terminalises owned active/accepted work; same-process recreation detects stale execution ownership. |
+| 11, unauthorised broadcast work/log flooding | Hardening. Bounded credential/enabled checks precede extras materialisation; receiver admits at most 32 requests/second and throttles rejection logs to once per ten seconds. OS IPC delivery itself cannot be prevented by app-side code. |
+| 12, redaction test uses nonexistent directory | False premise: TemporaryDirectory already exists and the original test writes there. Strengthened it to require an actual persisted file and a redaction marker, preventing a vacuous pass. |
+| 13–15, weak matching/pairing/action assertions | Valid test improvements, no demonstrated runtime defect. Tests now place an unrelated terminal row first, enforce exactly one read-only pairing call and require the exact broadcast action/component in both unit and fake-ADB integration tests. |
+
+The additional pure JVM guards cover capability restriction/revocation, persisted replay tombstones, deferred ordering, expiry, aggregate errors, earlier-failure attribution, temporary retirement and service-epoch recovery. Python still exercises the actual ADB CLI/archive path; these tests do not claim physical tvQuickActions or panel execution.
 
 ## Coverage and domain completion
 
