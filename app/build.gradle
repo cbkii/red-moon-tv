@@ -34,6 +34,19 @@ if (!sourceSha) {
 if (!(sourceSha ==~ /[0-9a-f]{40}/)) throw new GradleException('SOURCE_SHA must be a full immutable commit')
 def buildIdentity = (System.getenv('GITHUB_RUN_ID') ?: 'local') + '-' + (System.getenv('GITHUB_RUN_ATTEMPT') ?: '1')
 
+// Qualification follows the exact controller/native contract, not unrelated UI build identity.
+def nativeDigest = java.security.MessageDigest.getInstance('SHA-256')
+['BacklightController.kt', 'ContinuityPolicy.kt', 'NativeWriteGate.kt', 'RecoveryJournal.kt',
+ 'A4NativeBridge.java', 'VendorBacklightApi.java', 'A4NativeService.kt', 'A4BacklightBackend.kt',
+ 'A4RootBacklightBackend.kt', 'A4RootMain.java', 'RootProtocol.java', 'BootIdentity.java',
+ 'BrightnessPolicy.kt', 'TransitionSession.kt', 'TvDisplayService.kt', 'TvStorage.kt',
+ 'TvPreferences.kt', 'ControllerQueue.kt', 'NativeSessionState.kt', 'QuantisedFade.kt',
+ 'TvContinuity.kt', 'TvReceiver.kt', 'ValidationBackend.kt'].sort().each { name ->
+    nativeDigest.update(name.getBytes('UTF-8'))
+    nativeDigest.update(file('src/main/java/com/jmstudios/redmoon/tv/' + name).bytes)
+}
+def nativeCompatibility = nativeDigest.digest().collect { String.format('%02x', it & 0xff) }.join()
+
 android {
     compileSdkVersion 32
 
@@ -46,7 +59,8 @@ android {
         manifestPlaceholders = [appLabel: 'Red Moon TV']
         buildConfigField 'String', 'SOURCE_SHA', '"' + sourceSha + '"'
         buildConfigField 'String', 'BUILD_ID', '"' + buildIdentity + '"'
-        buildConfigField 'String', 'BACKEND_PROTOCOL', '"apk-jni-v2"'
+        buildConfigField 'String', 'NATIVE_COMPATIBILITY', '"' + nativeCompatibility + '"'
+        buildConfigField 'String', 'BACKEND_PROTOCOL', '"apk-jni-v4/root-pipe-v1"'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -76,7 +90,7 @@ android {
         main.java.srcDirs += 'src/main/kotlin'
     }
     lint {
-        disable 'NewApi', 'ExpiredTargetSdkVersion'
+        disable 'ExpiredTargetSdkVersion'
     }
 }
 

@@ -100,7 +100,7 @@ object Config : Preferences(appContext) {
     //endregion
 
     //region settings
-    var scheduleOn by BooleanPreference(R.string.pref_key_schedule, true) {
+    var scheduleOn by BooleanPreference(R.string.pref_key_schedule, false) {
         if (it) {
             Log.i("Schedule enabled")
             ScheduleReceiver.rescheduleOnCommand()

@@ -19,6 +19,12 @@ class PromotionTests(unittest.TestCase):
         record = copy.deepcopy(self.record); record['checks']['fades'] = dict(status='not run', evidence='')
         with self.assertRaises(ValueError): acceptance(record, self.info)
         with self.assertRaises(ValueError): acceptance(dict(a4_qualified=True), self.info)
+    def test_every_requested_viewing_path_and_persistence_is_a_release_gate(self):
+        for name in ('manual_override', 'fade_persistence', 'brightness_android', 'warmth_android',
+                     'brightness_tuner', 'warmth_tuner', 'brightness_hdmi', 'warmth_hdmi', 'brightness_hdr', 'warmth_hdr'):
+            record = copy.deepcopy(self.record); record['checks'].pop(name)
+            with self.subTest(gate=name), self.assertRaises(ValueError): acceptance(record, self.info)
+
     def test_no_reviewer_or_missing_device_identity(self):
         record = copy.deepcopy(self.record); record['device']['api'] = 32
         with self.assertRaises(ValueError): acceptance(record, self.info)

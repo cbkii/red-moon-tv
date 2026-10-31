@@ -1,0 +1,44 @@
+[
+  {
+    "action": "command",
+    "name": "read"
+  },
+  {
+    "action": "checkpoint",
+    "label": "lifecycle-before"
+  },
+  {
+    "action": "key",
+    "key": "SLEEP"
+  },
+  {
+    "action": "wait",
+    "seconds": 10
+  },
+  {
+    "action": "key",
+    "key": "WAKE"
+  },
+  {
+    "action": "wait",
+    "seconds": 10
+  },
+  {
+    "action": "checkpoint",
+    "label": "after-wake"
+  },
+  {
+    "action": "force_stop"
+  },
+  {
+    "action": "relaunch"
+  },
+  {
+    "action": "command",
+    "name": "read"
+  },
+  {
+    "action": "checkpoint",
+    "label": "after-process-recreation"
+  }
+]

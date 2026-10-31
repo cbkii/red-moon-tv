@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string translatable="false" name="tv_text_001">RED MOON</string>
+    <string translatable="false" name="tv_text_002">A4 display control</string>
+    <string translatable="false" name="tv_text_003">Last confirmed backlight</string>
+    <string translatable="false" name="tv_text_004">Connect backlight</string>
+    <string translatable="false" name="tv_text_005">Pause native schedule</string>
+    <string translatable="false" name="tv_text_006">Phase buttons hold until the next scheduled boundary. Warmth remains independent.</string>
+    <string translatable="false" name="tv_text_007">Backlight schedule</string>
+    <string translatable="false" name="tv_text_008">Finish connection setup on Home</string>
+    <string translatable="false" name="tv_text_009">Allow warmth over other apps</string>
+    <string translatable="false" name="tv_text_010">Warmth schedule</string>
+    <string translatable="false" name="tv_text_011">Use brightness phase times</string>
+    <string translatable="false" name="tv_text_012">Warmth strength</string>
+    <string translatable="false" name="tv_text_013">Warmth colour</string>
+    <string translatable="false" name="tv_text_014">Warmth off now</string>
+    <string translatable="false" name="tv_text_015">Warmth off never changes the native backlight. Colour is approximate; video-plane coverage still needs the TV.</string>
+    <string translatable="false" name="tv_text_016">Confirm visible panel test</string>
+    <string translatable="false" name="tv_text_017">Enable fades · persistence checked</string>
+    <string translatable="false" name="tv_text_018">Repeated native writes</string>
+    <string translatable="false" name="tv_text_019">Enable only after checking vendor persistence and real long-fade/playback behaviour. A restored single probe does not establish repeated-write safety.</string>
+    <string translatable="false" name="tv_text_020">Cancel</string>
+    <string translatable="false" name="tv_text_021">Verified</string>
+    <string translatable="false" name="tv_text_022">Copy full diagnostic report</string>
+    <string translatable="false" name="tv_text_023">Connection</string>
+    <string translatable="false" name="tv_text_024">APK is the default. Root requires a rooted TV and an explicit Magisk grant; it is never selected automatically.</string>
+    <string translatable="false" name="tv_text_025">Pause and transfer control to another build</string>
+    <string translatable="false" name="tv_text_026">Pause, release the live lease and clear this build\'s saved original? The current native level is retained.</string>
+    <string translatable="false" name="tv_text_027">Transfer</string>
+    <string translatable="false" name="tv_text_028">External automation</string>
+    <string translatable="false" name="tv_text_029">Allow installed apps to control Red Moon?</string>
+    <string translatable="false" name="tv_text_030">Every installed app can send the fixed Day/Dusk/Dim, Pause, Resume, Warmth Off and Read commands. No shell, probe, restore or qualification commands are exposed.</string>
+    <string translatable="false" name="tv_text_031">Keep off</string>
+    <string translatable="false" name="tv_text_032">Allow</string>
+    <string translatable="false" name="tv_text_033">Small backlight test</string>
+    <string translatable="false" name="tv_text_034">Keep this input and picture mode unchanged. Change the native level by five points, then attempt restoration after 15 seconds. Watch the real panel and Backlight slider. If interrupted, use native TV Settings to recover.</string>
+    <string translatable="false" name="tv_text_035">Test &amp; restore</string>
+    <string translatable="false" name="tv_text_036">Did the panel change and return?</string>
+    <string translatable="false" name="tv_text_037">Confirm only if you saw the physical backlight change and the original level return, and checked current input/picture behaviour. This enables native control on the tested setup. It does not qualify fades or other source/HDR modes.</string>
+    <string translatable="false" name="tv_text_038">Not confirmed</string>
+    <string translatable="false" name="tv_text_039">Confirmed</string>
+    <string translatable="false" name="tv_text_040">Keep the current native level?</string>
+    <string translatable="false" name="tv_text_041">Check native TV Settings first. This clears the saved original and leaves scheduling paused; it does not write the panel.</string>
+    <string translatable="false" name="tv_text_042">Keep current</string>
+    <string translatable="false" name="tv_text_043">Connect</string>
+    <string translatable="false" name="tv_text_044">Left / Right adjust · hold for larger steps\nOK saves · Back cancels</string>
+    <string translatable="false" name="tv_text_045">Save</string>
+    <string translatable="false" name="tv_text_046">Hour %02d</string>
+    <string translatable="false" name="tv_text_047">Hour</string>
+    <string translatable="false" name="tv_text_048">Minute %02d</string>
+    <string translatable="false" name="tv_text_049">Minute</string>
+    <string translatable="false" name="tv_text_050">24-hour start time</string>
+    <string translatable="false" name="tv_text_051">Incoming fade</string>
+    <string translatable="false" name="tv_text_052">Fade in seconds</string>
+    <string translatable="false" name="tv_text_053">OK</string>
+    <string translatable="false" name="tv_page_home">Home</string>
+    <string translatable="false" name="tv_page_schedule">Schedule</string>
+    <string translatable="false" name="tv_page_warmth">Warmth</string>
+    <string translatable="false" name="tv_page_diagnostics">Diagnostics</string>
+    <string translatable="false" name="tv_page_settings">Settings</string>
+    <string translatable="false" name="tv_phase_day">Day</string>
+    <string translatable="false" name="tv_phase_dusk">Dusk</string>
+    <string translatable="false" name="tv_phase_dim">Dim</string>
+    <string translatable="false" name="tv_message_001">Checking installed TV bindings…</string>
+    <string translatable="false" name="tv_message_002">Connect backlight to read the TV\'s native level. Warmth works independently.</string>
+    <string translatable="false" name="tv_message_003">Connecting with root… allow Magisk on the TV if prompted.</string>
+    <string translatable="false" name="tv_message_004">Reading the TV backlight…</string>
+    <string translatable="false" name="tv_message_005">open Diagnostics for the first error</string>
+    <string translatable="false" name="tv_message_006">Connection failed: %1$s</string>
+    <string translatable="false" name="tv_message_007">Native level is readable, but range or picture/boot context is unverified. Writes are blocked.</string>
+    <string translatable="false" name="tv_message_008">Connected. Run the small visible test before enabling backlight control.</string>
+    <string translatable="false" name="tv_message_009">The original level was restored. Confirm what you saw on the panel.</string>
+    <string translatable="false" name="tv_message_010">A saved native session needs attention. Restore it or explicitly keep the current level.</string>
+    <string translatable="false" name="tv_message_011">Backlight paused. The current native level is retained.</string>
+    <string translatable="false" name="tv_message_012">Root connection</string>
+    <string translatable="false" name="tv_message_013">APK connection</string>
+    <string translatable="false" name="tv_message_014">Test running…</string>
+    <string translatable="false" name="tv_message_015">Restore now</string>
+    <string translatable="false" name="tv_message_016">Reading backlight…</string>
+    <string translatable="false" name="tv_message_017">Checking TV…</string>
+    <string translatable="false" name="tv_message_018">Read again</string>
+    <string translatable="false" name="tv_message_019">Use APK connection</string>
+    <string translatable="false" name="tv_message_020">Try root connection</string>
+    <string translatable="false" name="tv_message_021">Test &amp; restore</string>
+    <string translatable="false" name="tv_message_022">Read again</string>
+    <string translatable="false" name="tv_message_023">Confirm visible test</string>
+    <string translatable="false" name="tv_message_024">Repeat test</string>
+    <string translatable="false" name="tv_message_025">Restore saved level</string>
+    <string translatable="false" name="tv_message_026">Keep current level</string>
+    <string translatable="false" name="tv_message_027">Pause backlight</string>
+    <string translatable="false" name="tv_message_028">Resume schedule</string>
+    <string translatable="false" name="tv_message_029">Read again</string>
+    <string translatable="false" name="tv_message_030">%1$s\n%2$d%%\n%3$s</string>
+    <string translatable="false" name="tv_message_031">Scheduled: %1$s · next %2$s at %3$s</string>
+    <string translatable="false" name="tv_message_032">Select a value to edit. Save applies all three phases together.</string>
+    <string translatable="false" name="tv_message_033">Unsaved changes · all three phases will be validated together</string>
+    <string translatable="false" name="tv_message_034">Maximum · 70–100%</string>
+    <string translatable="false" name="tv_message_035">Minimum · %1$d–%2$d%%</string>
+    <string translatable="false" name="tv_message_036">%1$s backlight</string>
+    <string translatable="false" name="tv_message_037">Fade %1$ds</string>
+    <string translatable="false" name="tv_message_038">Save schedule</string>
+    <string translatable="false" name="tv_message_039">Invalid schedule</string>
+    <string translatable="false" name="tv_message_040">Cancel changes</string>
+    <string translatable="false" name="tv_message_041">Day ≥ Dusk ≥ Dim. Incoming phase limits apply immediately; fades stay within that phase\'s band. Times use %1$s.</string>
+    <string translatable="false" name="tv_message_042">Open Android Settings → Apps → Special app access → Display over other apps → Red Moon TV.</string>
+    <string translatable="false" name="tv_message_043">%1$d%% warmth</string>
+    <string translatable="false" name="tv_message_044">%1$s warmth</string>
+    <string translatable="false" name="tv_message_045">Starts %1$s</string>
+    <string translatable="false" name="tv_message_046">Start and end must differ</string>
+    <string translatable="false" name="tv_message_047">Ends %1$s</string>
+    <string translatable="false" name="tv_message_048">Start and end must differ</string>
+    <string translatable="false" name="tv_message_049">Strength %1$d%%</string>
+    <string translatable="false" name="tv_message_050">Colour · approximately %1$d K</string>
+    <string translatable="false" name="tv_message_051">%1$d K</string>
+    <string translatable="false" name="tv_message_052">Warmth fade · %1$ds</string>
+    <string translatable="false" name="tv_message_053">%1$s\n%2$s · %3$s\n%4$s</string>
+    <string translatable="false" name="tv_message_054">Read backlight</string>
+    <string translatable="false" name="tv_message_055">Restart &amp; read</string>
+    <string translatable="false" name="tv_message_056">Restore saved level</string>
+    <string translatable="false" name="tv_message_057">Keep current level</string>
+    <string translatable="false" name="tv_message_058">Red Moon TV</string>
+    <string translatable="false" name="tv_message_059">Copied. The ADB collector also reads this automatically, even when the display service is stopped.</string>
+    <string translatable="false" name="tv_message_060">Selected: Root · switch to APK</string>
+    <string translatable="false" name="tv_message_061">Selected: APK · switch to Root</string>
+    <string translatable="false" name="tv_message_062">Red Moon TV · %1$s\nBuild %2$s · %3$s</string>
+    <string translatable="false" name="tv_message_063">Connect using root?</string>
+    <string translatable="false" name="tv_message_064">Connect using APK?</string>
+    <string translatable="false" name="tv_message_065">Read will request Magisk permission on the TV.</string>
+    <string translatable="false" name="tv_message_066">No root is requested.</string>
+    <string translatable="false" name="tv_message_067">Pause backlight scheduling and resolve any saved recovery first. %1$s The connection change resets native qualification. No backlight write occurs.</string>
+    <string translatable="false" name="tv_message_068">On</string>
+    <string translatable="false" name="tv_message_069">Off</string>
+    <string translatable="false" name="tv_message_070">%1$s · %2$s</string>
+    <string translatable="false" name="tv_message_071">Hour %02d</string>
+    <string translatable="false" name="tv_message_072">Minute %02d</string>
+    <string translatable="false" name="tv_message_073">Immediate</string>
+    <string translatable="false" name="tv_message_074">5 seconds</string>
+    <string translatable="false" name="tv_message_075">15 seconds</string>
+    <string translatable="false" name="tv_message_076">30 seconds</string>
+    <string translatable="false" name="tv_message_077">60 seconds</string>
+    <string translatable="false" name="tv_message_078">120 seconds</string>
+    <string translatable="false" name="tv_message_079">300 seconds</string>
+    <string translatable="false" name="tv_message_080">600 seconds</string>
+    <string translatable="false" name="tv_message_081">888 seconds</string>
+    <string translatable="false" name="tv_message_082">Custom</string>
+    <string translatable="false" name="tv_smooth_fades">Smooth phase fades</string>
+    <string translatable="false" name="tv_smooth_explanation">Smooth fades start at the actual brightness. During the transition, brightness may cross the incoming phase range between that reading and its target. The target still obeys its caps. Keep this off to enforce the incoming range immediately.</string>
+    <string translatable="false" name="tv_smooth_accept">Use smooth fades</string>
+    <string translatable="false" name="tv_transition_pause">Pause brightness scheduling before changing transition mode.</string>
+    <string translatable="false" name="tv_smooth_limits">Day ≥ Dusk ≥ Dim. Smooth fades move from actual brightness to the capped target without overshoot; incoming phase ranges apply at the end. Times use %1$s.</string>
+    <string name="tv_enforce_schedule" translatable="false">Keep scheduled brightness enforced</string>
+    <string name="tv_continuity_explanation" translatable="false">Boot and wake recovery run automatically for enabled features. By default, manual TV brightness is retained until the next phase. Enforcement reapplies the schedule after a changed reading; Pause always stops it.</string>
+</resources>

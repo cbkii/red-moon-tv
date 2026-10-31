@@ -102,6 +102,7 @@ fun inActivePeriod(Log: KLog? = null): Boolean {
 fun getString(resId: Int): String = appContext.getString(resId)
 fun getColor (resId: Int): Int = ContextCompat.getColor(appContext, resId)
 
+@androidx.annotation.ChecksSdkIntAtLeast(parameter = 0)
 fun atLeastAPI(api: Int): Boolean = android.os.Build.VERSION.SDK_INT >= api
 fun belowAPI  (api: Int): Boolean = android.os.Build.VERSION.SDK_INT <  api
 

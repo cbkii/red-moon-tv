@@ -1,3 +1,18 @@
+# Red Moon TV — A4 backlight-first fork
+
+Native backlight control for the Toshiba/Hisense HiSmartTV A4, with a D-pad interface, strict Day/Dusk/Dim schedules and independently scheduled warmth. Both schedules start disabled; native control and repeated-write fades require physical qualification.
+
+- [A4 operation, diagnostics and acceptance](docs/A4-VALIDATION.md)
+- [31 October device results and corrective work](docs/A4-DEVICE-RESULTS-2026-10-31.md)
+- [TESTING, signing and release workflows](docs/RELEASES.md)
+- [Investigated implementation plan](docs/A4-BACKLIGHT-PLAN.md)
+
+The A4 backend uses the installed vendor bindings in a private APK process. Diagnostics also offers an experimental persistent root fallback with fixed private pipe commands and bounded native operations. Neither path uses UI navigation, staged executables or redistributed vendor binaries. An atomic recovery journal and live controller lease protect writes. Interrupted sessions require explicit Read/Restore/Keep; source/HDR identity still needs physical qualification. See [root/performance qualification and the read-only collector](docs/A4-ROOT-AND-PERFORMANCE.md).
+
+This fork uses a separate application ID and preserves the upstream colour-filter engine. Vendor control has not been physically qualified by CI. The original upstream README follows.
+
+---
+
 ## Not Actively Maintained
 
 Red Moon is no longer maintained, but Pull Requests are still accepted. I'm also willing to deputize PR authors as co-maintainers. [**Read More**](https://github.com/LibreShift/red-moon/issues/281)
@@ -127,3 +142,5 @@ All used artwork is released into the public domain. Some of the icons use clip 
 [GNU General Public License version 3]: https://www.gnu.org/licenses/gpl-3.0.html
 [the contributors]: https://github.com/raatmarien/red-moon/graphs/contributors
 [openclipart.org]: https://openclipart.org/
+
+Startup/continuity implementation and ADB experiments: [A4-STARTUP-CONTINUITY.md](docs/A4-STARTUP-CONTINUITY.md).
