@@ -7,7 +7,7 @@ import org.json.JSONObject
 object TvAdbControl {
     val commands = setOf("read", "read_restart", "use_root_read", "use_apk_read", "probe", "restore", "keep",
         "pause", "resume", "phase", "warmth", "warmth_off", "boundary", "test_fade", "configure",
-        "save_config", "restore_config", "acknowledge", "close_worker", "ensure_running", "fault")
+        "save_config", "restore_config", "acknowledge", "close_worker", "ensure_running", "fault", "supervise")
     fun validate(command: String, data: JSONObject) {
         require(command in commands) { "Unknown ADB command" }
         val keys = when (command) {

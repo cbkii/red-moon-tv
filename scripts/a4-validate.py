@@ -19,7 +19,7 @@ spec.loader.exec_module(collect)
 
 COMMANDS = {'read', 'read_restart', 'use_root_read', 'use_apk_read', 'probe', 'restore', 'keep', 'pause',
             'resume', 'phase', 'warmth', 'warmth_off', 'boundary', 'test_fade', 'configure', 'save_config',
-            'restore_config', 'acknowledge', 'close_worker'}
+            'restore_config', 'acknowledge', 'close_worker', 'ensure_running', 'fault'}
 KEYS = {'HOME': 3, 'BACK': 4, 'UP': 19, 'DOWN': 20, 'LEFT': 21, 'RIGHT': 22, 'OK': 23,
         'SETTINGS': 176, 'INPUT': 178, 'TV': 170, 'HDMI1': 243, 'SLEEP': 223, 'WAKE': 224}
 

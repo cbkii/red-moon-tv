@@ -55,9 +55,10 @@ class TvPreferences(private val context: Context) {
                 (listOf(info.sourceDir) + (info.splitSourceDirs?.toList() ?: emptyList()) +
                     (info.sharedLibraryFiles?.toList() ?: emptyList())).joinToString(":") { digest(File(it)) }
             } catch (_: Exception) { "binding-unavailable" }
-            val result = android.os.Build.FINGERPRINT + ":" + BuildConfig.BACKEND_PROTOCOL + ":" + BuildConfig.NATIVE_COMPATIBILITY + ":" + binding + ":" + digest(File("/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so"))
+            val vendor = digest(File("/vendor/lib/libcom_mediatek_twoworlds_tv_jni.so"))
+            val result = android.os.Build.FINGERPRINT + ":" + BuildConfig.BACKEND_PROTOCOL + ":" + BuildConfig.NATIVE_COMPATIBILITY + ":" + binding + ":" + vendor
             val callbacks = synchronized(TvPreferences::class.java) {
-                identity = result; checking = false
+                identity = result.takeUnless { binding.contains("unavailable") || binding.contains("unreadable:") || vendor.startsWith("unreadable:") }; checking = false
                 listeners.toList().also { listeners.clear() }
             }
             main.post { callbacks.forEach { it() } }

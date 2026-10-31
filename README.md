@@ -142,3 +142,5 @@ All used artwork is released into the public domain. Some of the icons use clip 
 [GNU General Public License version 3]: https://www.gnu.org/licenses/gpl-3.0.html
 [the contributors]: https://github.com/raatmarien/red-moon/graphs/contributors
 [openclipart.org]: https://openclipart.org/
+
+Startup/continuity implementation and ADB experiments: [A4-STARTUP-CONTINUITY.md](docs/A4-STARTUP-CONTINUITY.md).

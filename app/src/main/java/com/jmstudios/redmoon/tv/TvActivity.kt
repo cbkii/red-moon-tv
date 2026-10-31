@@ -272,6 +272,10 @@ class TvActivity : Activity() {
             AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setMessage(getString(R.string.tv_text_026))
                 .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_027)) { _, _ -> command("keep") }.show()
         }
+        toggle(getString(R.string.tv_enforce_schedule), prefs.enforceSchedule, "settings-enforce") { enabled ->
+            prefs.store.edit().putBoolean("enforce-schedule", enabled).apply(); render()
+        }
+        text(getString(R.string.tv_continuity_explanation), 14, muted)
         val external = prefs.store.getBoolean("external-control", false)
         toggle(getString(R.string.tv_text_028), external, "settings-external") { enabled ->
             if (!enabled) { prefs.store.edit().putBoolean("external-control", false).apply(); render() }

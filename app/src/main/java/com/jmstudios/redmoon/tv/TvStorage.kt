@@ -17,7 +17,7 @@ object TvStorage {
         val device = app.createDeviceProtectedStorageContext()
         val target = device.getSharedPreferences(NAME, Context.MODE_PRIVATE)
         if (!target.getBoolean(MIGRATED, false) && app.getSystemService(UserManager::class.java).isUserUnlocked) {
-            val old = app.createCredentialProtectedStorageContext()
+            val old = app // Application defaults to credential storage; only TV-owned stores use DE.
             val source = AtomicFile(File(old.filesDir, JOURNAL))
             val destination = AtomicFile(File(device.filesDir, JOURNAL))
             if ((source.baseFile.exists() || File(source.baseFile.path + ".bak").exists()) &&

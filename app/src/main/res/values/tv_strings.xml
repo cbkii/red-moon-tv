@@ -148,4 +148,6 @@
     <string translatable="false" name="tv_smooth_accept">Use smooth fades</string>
     <string translatable="false" name="tv_transition_pause">Pause brightness scheduling before changing transition mode.</string>
     <string translatable="false" name="tv_smooth_limits">Day ≥ Dusk ≥ Dim. Smooth fades move from actual brightness to the capped target without overshoot; incoming phase ranges apply at the end. Times use %1$s.</string>
+    <string name="tv_enforce_schedule" translatable="false">Keep scheduled brightness enforced</string>
+    <string name="tv_continuity_explanation" translatable="false">Boot and wake recovery run automatically for enabled features. By default, manual TV brightness is retained until the next phase. Enforcement reapplies the schedule after a changed reading; Pause always stops it.</string>
 </resources>

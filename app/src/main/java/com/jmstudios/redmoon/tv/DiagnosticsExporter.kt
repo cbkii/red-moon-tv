@@ -42,7 +42,7 @@ object DiagnosticsExporter {
             .put("access_required", prefs.store.getBoolean("access-required", false))
             .put("schedule", JSONObject().put("phase", schedule?.current?.phase?.name)
                 .put("level", schedule?.current?.level).put("next_at", schedule?.next?.instant?.toEpochMilli()))
-            .put("scheduled_level_applied", prefs.backlightEnabled && !prefs.store.contains("manual-hold-until") &&
+            .put("scheduled_level_applied", TvDisplayService.active && NativeSnapshot.value?.let { System.currentTimeMillis() - it.at < 120000 } == true && prefs.backlightEnabled && !prefs.store.contains("manual-hold-until") &&
                 schedule != null && prefs.nativeLevel == schedule.current.level).put("package", context.packageName)
             .put("signer_sha256", signer(context))
             .put("source_sha", BuildConfig.SOURCE_SHA).put("build_id", BuildConfig.BUILD_ID)

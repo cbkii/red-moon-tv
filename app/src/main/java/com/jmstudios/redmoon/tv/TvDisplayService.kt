@@ -113,6 +113,7 @@ class TvDisplayService : Service() {
     private val health = object : Runnable {
         override fun run() {
             if (destroyed) return
+            if (!prefs.identityReady) prefs.prepareIdentity { if (!destroyed) reconcile(false, true) }
             healthAt = SystemClock.elapsedRealtime()
             powerChanged()
             try { if (screenOn) {
@@ -180,7 +181,7 @@ class TvDisplayService : Service() {
     private fun executeCommand(command: String, intent: Intent?) {
         when (command) {
             "ensure_running" -> {
-                if (intent?.getStringExtra("reason") == "health" && brightnessState == DisplayRunState.RETRY_WAIT && retryTask == null) {
+                if (intent?.getStringExtra("reason") == "health" && prefs.store.getBoolean("retryable-read", false) && !recoveryRequired && !prefs.store.getBoolean("access-required", false) && retryTask == null) {
                     readiness.reset(); prefs.store.edit().putBoolean("native-blocked", false).apply()
                 }
                 if (retryTask == null) reconcile(false, needsNativeStart || overlay == null)
@@ -382,6 +383,7 @@ class TvDisplayService : Service() {
             // Ownership is relinquished. Neither stale cleanup nor Restore may undo this adjustment.
             controller.discard(); recoveryRequired = false; preview = false
             if (until != null) edit.putLong("manual-hold-until", until) else edit.remove("manual-hold-until")
+            brightnessState = DisplayRunState.MANUAL_HOLD
             event = "Manual brightness retained until the next scheduled phase or explicit Resume"
         } else if (error is BacklightContextChange && safe && !preview) {
             controller.retireConfirmed(); recoveryRequired = false
@@ -498,6 +500,7 @@ class TvDisplayService : Service() {
                 return@submit
             }
             val current = controller.begin("schedule")
+            if (nativeAppliedAt == 0L) StartupEvents.record(this, "native_ready", "${setting.phase}:$current")
             prefs.store.edit().putBoolean("native-blocked", false).putString("active-boundary", boundaryKey).remove("current-native-error").apply()
             needsNativeStart = false; readiness.reset(); cancelRetry()
             prefs.readStarted(); prefs.readFinished()
