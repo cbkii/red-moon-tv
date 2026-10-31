@@ -43,9 +43,9 @@ class BrightnessPolicy(val settings: List<PhaseSetting>) {
 }
 
 /** Quantised, strict incoming-band fade. Native calls are never animation-frame driven. */
-class BrightnessFade(policy: BrightnessPolicy, val setting: PhaseSetting, current: Int, requestedDurationMillis: Long, strictBand: Boolean = true) {
-    private val start = if (strictBand) policy.constrain(setting, current) else current
-    private val allowed = if (strictBand) policy.band(setting) else minOf(current, setting.level)..maxOf(current, setting.level)
+class BrightnessFade(policy: BrightnessPolicy, val setting: PhaseSetting, current: Int, requestedDurationMillis: Long, strictBand: Boolean = true, band: IntRange = policy.band(setting)) {
+    private val start = if (strictBand) current.coerceIn(band) else current
+    private val allowed = if (strictBand) band else minOf(current, setting.level)..maxOf(current, setting.level)
     init { require(current in 0..100 && requestedDurationMillis in 0..888000) }
     val durationMillis = if (start == setting.level) 0L else requestedDurationMillis
     /** Next changed integer, capped at two writes/second; no duplicate 500 ms polling. */

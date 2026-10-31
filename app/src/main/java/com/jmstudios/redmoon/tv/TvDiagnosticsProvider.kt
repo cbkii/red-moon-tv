@@ -17,9 +17,9 @@ class TvDiagnosticsProvider : ContentProvider() {
     override fun onCreate() = true
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?,
                        selectionArgs: Array<out String>?, sortOrder: String?): Cursor {
-        require(uri.path == "/report" && selection == null && selectionArgs == null) { "Only /report is supported" }
+        require(uri.path in setOf("/report", "/automation") && selection == null && selectionArgs == null) { "Only /report and /automation are supported" }
         return MatrixCursor(arrayOf("report"), 1).apply {
-            addRow(arrayOf(DiagnosticsExporter.report(requireNotNull(context))))
+            addRow(arrayOf(if (uri.path == "/automation") AutomationState(requireNotNull(context)).report().toString() else DiagnosticsExporter.report(requireNotNull(context))))
         }
     }
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
@@ -29,6 +29,21 @@ class TvDiagnosticsProvider : ContentProvider() {
         if (Binder.getCallingUid() != 0) app.enforceCallingPermission("android.permission.DUMP", "ADB diagnostics")
         require((arg?.length ?: 0) <= 8192 && (extras == null || extras.isEmpty)) { "Bounded JSON argument only" }
         val data = JSONObject(arg ?: "{}")
+        if (method == "automation_pairing") {
+            require(data.length() == 0)
+            return Bundle().apply { putString("result", JSONObject().put("token", AutomationState(app).token())
+                .put("enabled", AutomationState(app).enabled).toString()) }
+        }
+        if (method == "automation") {
+            val bundle = Bundle()
+            data.keys().forEach { key -> when (val value = data.get(key)) {
+                is Int -> bundle.putInt(key, value); is Boolean -> bundle.putBoolean(key, value)
+                is String -> bundle.putString(key, value); else -> error("Primitive extras only")
+            } }
+            val identity = Binder.clearCallingIdentity()
+            try { return Bundle().apply { putString("result", AutomationState.submit(app, bundle).toString()) } }
+            finally { Binder.restoreCallingIdentity(identity) }
+        }
         TvAdbControl.validate(method, data)
         val id = UUID.randomUUID().toString()
         val identity = Binder.clearCallingIdentity()

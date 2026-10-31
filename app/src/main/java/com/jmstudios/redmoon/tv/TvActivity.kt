@@ -255,6 +255,7 @@ class TvActivity : Activity() {
         text(DiagnosticsExporter.report(this), 13, muted).typeface = Typeface.MONOSPACE
     }
     private fun settings() {
+        button(getString(R.string.automation_title), "settings-automation") { startActivity(Intent(this, TvAutomationActivity::class.java)) }
         toggle(getString(R.string.tv_smooth_fades), !prefs.strictTransitions, "settings-smooth", !prefs.backlightEnabled) { smooth ->
             if (!smooth) { prefs.store.edit().putString("transition-mode", "strict").apply(); render() }
             else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
@@ -271,13 +272,6 @@ class TvActivity : Activity() {
         button(getString(R.string.tv_text_025), "settings-transfer") {
             AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setMessage(getString(R.string.tv_text_026))
                 .setNegativeButton(getString(R.string.tv_text_020), null).setPositiveButton(getString(R.string.tv_text_027)) { _, _ -> command("keep") }.show()
-        }
-        val external = prefs.store.getBoolean("external-control", false)
-        toggle(getString(R.string.tv_text_028), external, "settings-external") { enabled ->
-            if (!enabled) { prefs.store.edit().putBoolean("external-control", false).apply(); render() }
-            else AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle(getString(R.string.tv_text_029))
-                .setMessage(getString(R.string.tv_text_030))
-                .setNegativeButton(getString(R.string.tv_text_031), null).setPositiveButton(getString(R.string.tv_text_032)) { _, _ -> prefs.store.edit().putBoolean("external-control", true).apply(); render() }.show()
         }
         text(getString(R.string.tv_message_062, BuildConfig.VERSION_NAME, BuildConfig.BUILD_ID, BuildConfig.SOURCE_SHA.take(12)), 15, muted)
     }

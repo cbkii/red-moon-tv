@@ -1,0 +1,33 @@
+<resources>
+    <string name="automation_title" translatable="false">Automation · tvQuickActions</string>
+    <string name="automation_help" translatable="false">Create shortcuts in tvQuickActions → Custom actions → Shortcuts → Red Moon TV. Broadcasts preserve playback focus. Temporary controls preserve saved profiles; native phase caps still apply. Left/Right adjusts numbers, OK saves.</string>
+    <string name="automation_enable" translatable="false">Enable paired automation</string>
+    <string name="automation_disable" translatable="false">Disable automation and revoke shortcuts</string>
+    <string name="automation_consent" translatable="false">Paired apps can temporarily change backlight and warmth. Generated shortcuts include a private capability token. Share it only with trusted automation apps; revoke it here. Qualification and recovery protections remain enforced.</string>
+    <string name="automation_copy_token" translatable="false">Copy pairing token for broadcast recipes</string>
+    <string name="automation_copied" translatable="false">Pairing token copied; keep it private</string>
+    <string name="automation_rotate" translatable="false">Revoke existing shortcuts and pairing token</string>
+    <string name="automation_rotate_confirm" translatable="false">Existing shortcuts and broadcasts will stop working. Recreate shortcuts or update their token. Current automation is cancelled and native scheduling pauses.</string>
+    <string name="automation_legacy_on" translatable="false">Legacy tokenless controls: on</string>
+    <string name="automation_legacy_off" translatable="false">Legacy tokenless controls: off</string>
+    <string name="automation_legacy_warning" translatable="false">Toggle compatibility with the five original CONTROL broadcasts. When enabled, any installed app can send those commands while automation is enabled. Prefer paired shortcuts or the versioned API.</string>
+    <string name="automation_enable_first" translatable="false">Enable paired automation first</string>
+    <string name="automation_duration" translatable="false">Duration in seconds · 1–86400</string>
+    <string name="automation_fade" translatable="false">Fade in seconds · 0–888</string>
+    <string name="automation_expiry" translatable="false">Keep this adjustment until…</string>
+    <string name="automation_delta" translatable="false">Adjustment · −20 to +20 · exclude zero</string>
+    <string name="automation_value" translatable="false">Target percentage · saved phase caps apply</string>
+    <string name="automation_scope" translatable="false">Apply to</string>
+    <string name="automation_sent" translatable="false">Request queued; completion appears separately</string>
+    <string name="automation_rejected" translatable="false">Automation rejected; check enablement and pairing token</string>
+    <string-array name="automation_commands" translatable="false">
+        <item>Apply brightness phase</item><item>Brighter / Dimmer</item><item>Set brightness</item>
+        <item>Pause brightness</item><item>Resume brightness schedule</item><item>Warmer / Cooler</item>
+        <item>Set warmth strength</item><item>Warmth on / off</item><item>Apply saved phase preset</item>
+        <item>Snooze automation</item><item>Resume automatic control</item><item>Cancel transition and hold current</item>
+        <item>Reconcile after wake / input change</item><item>Show status</item><item>Open controls</item>
+    </string-array>
+    <string-array name="automation_expiries" translatable="false"><item>Next relevant scheduled boundary</item><item>For a duration</item><item>Until explicitly resumed</item></string-array>
+    <string-array name="automation_scopes" translatable="false"><item>Brightness and warmth</item><item>Brightness only</item><item>Warmth only</item></string-array>
+    <string-array name="automation_switch" translatable="false"><item>On</item><item>Off</item></string-array>
+</resources>
