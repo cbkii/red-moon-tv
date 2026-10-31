@@ -104,7 +104,7 @@ class A4BacklightBackend(context: Context) : BacklightBackend {
             if (operation == "hello") {
                 binding.session.hello(result.getInt("uid", -1), result.getInt("pid", -1), Process.myUid(), Process.myPid(), worker)
             } else binding.session.verify(result.getString("connection"), worker)
-            val edit = app.getSharedPreferences("tv-display-v1", Context.MODE_PRIVATE).edit()
+            val edit = TvStorage.preferences(app).edit()
             if (operation == "hello") edit.remove("first-initialisation-error")
             result.getString("diagnostics")?.let { edit.putString("native-diagnostics", it) }
             result.getString("first-initialisation-error")?.let { edit.putString("first-initialisation-error", it) }

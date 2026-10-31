@@ -127,4 +127,23 @@ class BacklightControllerTest {
         assertTrue(native.writes.isEmpty()); assertNull(store.record)
     }
 
+    @Test fun adoptionHoldsLeaseDuringJournalTransfer() {
+        val native = Fake(); val store = Memory(); val first = BacklightController(native, store, "one")
+        first.begin("schedule"); first.write(60); first.release()
+        native.onRead = { assertTrue(native.held) }
+        val next = BacklightController(native, store, "two")
+        next.begin("schedule"); assertEquals("two", store.record!!.session)
+        assertEquals(66, store.record!!.original); next.release()
+    }
+    @Test fun newBootNeverRestoresPreviousBootOriginal() {
+        val native = Fake(); val store = Memory()
+        native.picture = "device:boot:id=one:picture=1"
+        val first = BacklightController(native, store, "one")
+        first.begin("schedule"); first.write(60); first.release()
+        native.picture = "device:boot:id=two:picture=1"; native.value = 85
+        val next = BacklightController(native, store, "two")
+        next.begin("schedule"); next.write(70); next.restore()
+        assertEquals(85, native.value)
+    }
+
 }

@@ -25,7 +25,7 @@ def extract_report(text, package):
             report, _ = json.JSONDecoder().raw_decode(text[match.start():])
         except ValueError:
             continue
-        if report.get('schema') in (2, 3, 4) and report.get('package') == package:
+        if report.get('schema') in (2, 3, 4, 5) and report.get('package') == package:
             return report
     return None
 

@@ -25,8 +25,21 @@ object DiagnosticsExporter {
         } ?: JSONObject.NULL } catch (error: Exception) { "unreadable: ${error.message}" }
         val now = java.time.Instant.now()
         val schedule = try { prefs.policy().at(now, java.time.ZoneId.systemDefault()) } catch (_: IllegalArgumentException) { null }
-        return JSONObject().put("schema", 4)
+        return JSONObject().put("schema", 5)
             .put("report_at", System.currentTimeMillis())
+            .put("boot_id", BootIdentity.read()).put("native_compatibility", BuildConfig.NATIVE_COMPATIBILITY)
+            .put("device_protected_storage", TvStorage.context(context).isDeviceProtectedStorage)
+            .put("storage_migrated", TvStorage.ready(context))
+            .put("user_unlocked", context.getSystemService(android.os.UserManager::class.java).isUserUnlocked)
+            .put("background_restricted", (android.os.Build.VERSION.SDK_INT >= 28 && context.getSystemService(android.app.ActivityManager::class.java).isBackgroundRestricted))
+            .put("battery_exempt", context.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName))
+            .put("overlay_permission", android.provider.Settings.canDrawOverlays(context))
+            .put("startup_events", StartupEvents.snapshot(context))
+            .put("sample_current_process", NativeSnapshot.value != null)
+            .put("sample_age_ms", (NativeSnapshot.value?.at ?: prefs.store.getLong("native-read-at", 0)).let {
+                if (it > 0) System.currentTimeMillis() - it else JSONObject.NULL })
+            .put("enforce_schedule", prefs.enforceSchedule)
+            .put("access_required", prefs.store.getBoolean("access-required", false))
             .put("schedule", JSONObject().put("phase", schedule?.current?.phase?.name)
                 .put("level", schedule?.current?.level).put("next_at", schedule?.next?.instant?.toEpochMilli()))
             .put("scheduled_level_applied", prefs.backlightEnabled && !prefs.store.contains("manual-hold-until") &&

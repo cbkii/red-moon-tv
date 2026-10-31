@@ -62,7 +62,7 @@ class TvActivity : Activity() {
     }
     override fun onStart() { super.onStart(); registerReceiver(refresh, IntentFilter(TvDisplayService.STATUS)) }
     override fun onStop() { unregisterReceiver(refresh); super.onStop() }
-    override fun onResume() { super.onResume(); if (::prefs.isInitialized) render() }
+    override fun onResume() { super.onResume(); if (::prefs.isInitialized) { TvContinuity.ensureRunning(this, "activity"); render() } }
     override fun onSaveInstanceState(out: Bundle) {
         out.putString("page", page.name)
         scheduleDraft?.let { out.putIntArray("draft", it.flatMap { s -> listOf(s.level, s.startMinute, s.fadeSeconds) }.toIntArray()) }
